@@ -1,7 +1,0 @@
-{
-  "key": "gh",
-  "label": "GitHub Release（Cloudflare 代理）",
-  "base": "https://res.sxhzxy.ccwu.cc/",
-  "apkVer": "10.19.4",
-  "note": "base 末尾必须带斜杠；bucket 名与 appid、地域按你控制台的真实域名替换。改完跑 python scripts/switch_mirror.py 即可重生成 manifest + 重签 APK。"
-}
