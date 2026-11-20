@@ -14,8 +14,8 @@
 ## 目录
 
 ```
-index.html         错题本网页版（单文件，含全部逻辑与数据）
-apk/cuoti-10.60.apk  安卓安装包（当前版本）
+index.html         错题本网页版（单文件，含全部逻辑与数据，约 26 MB）
+couti10190.apk     安卓安装包（当前修复版，12.2 MB）
 apk/index.html     安装包下载页（手机访问自动跳转）
 manifest.json      资料清单（schema: cuoti-res/1）
 .nojekyll          关闭 Jekyll 处理，纯静态站必须有
@@ -23,9 +23,10 @@ manifest.json      资料清单（schema: cuoti-res/1）
 
 ## 更新流程
 
-1. 用新版 `index.html` 覆盖根目录同名文件（网页版直接拖拽上传即可，约 30 秒生效）；
-2. 新安装包放进 `apk/`，文件名带版本号（如 `cuoti-10.61.apk`），同时把 `apk/index.html`
-   里的链接和版本号改掉；
+1. `index.html` 约 26 MB，**超过 GitHub 网页端 25 MB 的拖拽上传上限**，必须用
+   `git add index.html && git commit && git push`（git 单文件上限 100 MB），约 30 秒生效；
+2. 用新安装包覆盖根目录 `couti10190.apk`，同时把 `apk/index.html`
+   里的链接和版本文案改掉；
 3. 旧版本安装包**不要一直留在仓库里**（每版 21 MB，会把仓库撑大）。归档到
    Releases → 打 tag（如 `v10.60`）→ 上传 `cuoti-10.60.apk`。
 
@@ -38,6 +39,6 @@ manifest.json      资料清单（schema: cuoti-res/1）
 
 ## 关于访问速度
 
-`github.io` 在国内网络下不稳定，首次打开 18 MB 的单文件页面可能很慢。
+`github.io` 在国内网络下不稳定，首次打开 26 MB 的单文件页面可能很慢。
 如果需要更快的入口，把同一个目录部署到 Cloudflare Pages（免费、无需备案），
 再绑自有域名即可；本目录可直接拖拽上传，无需任何构建命令。

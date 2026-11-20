@@ -1,6 +1,117 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+<script id="ctbPageBus">
+/* ============================================================================
+   10.200 · 页面渲染总线（重做「开机 / 切页 / 总悬浮球」这一层）
+   ----------------------------------------------------------------------------
+   旧实现：F5 / v198 / v199 三层补丁分别做「事后切回看板」「按函数名冻结」
+   「25 秒后补跑」，叠加几十层 switchTab 包装与几十个 MutationObserver；
+   任一抢页脚本改写 __CUR_TAB__ 后守卫即失效，于是看板 / 查询 / 知识点轮播。
+   新实现：只有一个权威 —— 用户产生第一次真实交互之前，正文只能是数据看板。
+   任何把 #mainContent 换成别的整页、或切到非看板页的调用，直接丢弃：
+   不排队、不补跑、不事后纠正；用户一点菜单立即放行，功能不受影响。
+   同时从源头去掉 doMerge / __runTeachMerge 的「顺手刷新正文」调用，
+   数据合并照常完成，页面归属统一交给本总线决定。
+   ============================================================================ */
+(function (W) {
+  'use strict';
+  var unlocked = false, suppressed = 0, T0 = Date.now();
+
+  function inSplash(n) {
+    for (var k = 0; k < 6 && n; k++, n = n.parentNode) {
+      if (n && (n.id === 'ctbSplash' || n.id === 'ctbSplashV')) return true;
+    }
+    return false;
+  }
+  function inHubUI(n) {
+    for (var k = 0; k < 6 && n; k++, n = n.parentNode) {
+      if (n && /^(c123Hub|c123Menu|c123Side|c123Handle|c123Mask)$/.test(n.id || '')) return true;
+    }
+    return false;
+  }
+  function locked() { return !unlocked; }
+  function unlock() { unlocked = true; }   /* 解锁不做任何重渲染，零副作用 */
+  /* 看板判据与文件原有 isDashboard() 一致；短片段 / 清空不算整页重写，放行 */
+  function isDashboardHTML(v) {
+    if (typeof v !== 'string' || v.length < 400) return true;
+    return v.indexOf('\u6570\u636e\u770b\u677f') >= 0 || v.indexOf('stats-row') >= 0;
+  }
+
+  /* ① 正文整页写入闸门：覆盖所有 renderXxx，无论函数被重定义多少次 */
+  try {
+    var ep = W.Element && W.Element.prototype;
+    var desc = ep && Object.getOwnPropertyDescriptor(ep, 'innerHTML');
+    if (desc && desc.get && desc.set) {
+      Object.defineProperty(ep, 'innerHTML', {
+        configurable: true, enumerable: desc.enumerable,
+        get: function () { return desc.get.call(this); },
+        set: function (v) {
+          if (this && this.id === 'mainContent' && locked() && !isDashboardHTML(v)) {
+            suppressed++; return;
+          }
+          return desc.set.call(this, v);
+        }
+      });
+    }
+  } catch (e) { }
+
+  /* ①b 当前页标志：锁定期只认看板，杜绝抢页脚本改走 __CUR_TAB__
+        导致 F5 / v198 / v199 及各类注入守卫集体误判。 */
+  var _tab = 'overview';
+  try {
+    Object.defineProperty(W, '__CUR_TAB__', {
+      configurable: true,
+      get: function () { return locked() ? 'overview' : _tab; },
+      set: function (v) {
+        if (locked() && String(v) !== 'overview') { suppressed++; return; }
+        _tab = v;
+      }
+    });
+  } catch (e) { }
+
+  /* ② 切页闸门：未交互时只允许落在看板（best-effort，正文闸门为主） */
+  var _st = null;
+  try {
+    Object.defineProperty(W, 'switchTab', {
+      configurable: true,
+      get: function () { return _st; },
+      set: function (f) {
+        if (typeof f !== 'function') { _st = f; return; }
+        _st = function (tab) {
+          if (locked() && String(tab) !== 'overview') { suppressed++; return; }
+          return f.apply(this, arguments);
+        };
+      }
+    });
+  } catch (e) { }
+
+  /* ③ 交互解锁：开机视频「跳过」、打开/拖动总悬浮球框都不算开始使用；
+        总球框菜单里的功能按钮算，点了立即放行，原功能照常执行。 */
+  function onUser(e) {
+    if (!e || !e.isTrusted || unlocked) return;
+    if (inSplash(e.target)) return;
+    if (inHubUI(e.target)) {
+      var t = e.target;
+      if (t && t.tagName === 'BUTTON') unlock();
+      return;
+    }
+    unlock();
+  }
+  ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown'].forEach(function (ev) {
+    try { W.addEventListener(ev, onUser, true); } catch (e) { }
+  });
+
+  W.__CTB_PAGE_BUS__ = {
+    locked: locked,
+    unlock: unlock,
+    state: function () {
+      return { locked: locked(), unlocked: unlocked, suppressed: suppressed,
+        upMs: Date.now() - T0, tab: String(W.__CUR_TAB__ || '') };
+    }
+  };
+})(window);
+</script>
 <script id="ctb157Guard">
 /* 10.157 主线程守护：给所有高频定时器与观察器削峰，不改任何功能语义。
    这个文件此前累积了 100+ 个 setInterval 与数十个 MutationObserver，
@@ -7181,7 +7292,7 @@ window.addEventListener('load', function(){
         b1.textContent = n;
         if (b1.title) b1.title = "知识点库：" + n + " 个知识点 · 6 科（按「册×知识点」展开）";
       }
-      if (window.__KBLIB__ && window.__KBLIB__.render) window.__KBLIB__.render();
+      /* [PageBus 10.200] 知识点已合并、角标已更新；不再整页重绘。 */
     } catch(e) { console.warn("[teach-kp] refresh error", e); }
   }, 300);
   console.log("[teach-kp] 补齐版教材知识点已合并，新增/覆盖:", added, "，合计:", 566);
@@ -48603,8 +48714,8 @@ try {
     console.log('[KB650] 已注入 ' + added + ' 点（重名另存 ' + renamed + '，跳过未审草稿 ' + skippedDraft + '），' +
       '各册：' + BOOK);
      
-    try { if (typeof window.renderKbQueryFixed === 'function') window.renderKbQueryFixed(); } catch (e) { }
-    try { if (typeof window.renderKbPanel === 'function') window.renderKbPanel(); } catch (e) { }
+    /* [PageBus 10.200] 合并结果已写入 KNOWLEDGE_BASE / KB_FLAT；
+       不再顺手刷新正文 —— 页面归属由页面渲染总线统一决定，避免开机轮播。 */
      
     var el = document.createElement('div');
     el.id = 'kb650Flag';
@@ -135244,6 +135355,7 @@ window.__CTB144_SERIES__ = [
      现在：开机期间一次都不切；结束后先让延迟注入跑完，再低频、去抖、限次纠正。 */
   function tick() {
     if (stopped) return;
+    if (W.__CTB_PAGE_BUS__) return;   /* [PageBus] 事后纠正已下线 */
     ticks++;
     var now = Date.now(), sp = splashEl(), flag = !!W.__CTB_SPLASH_DONE__;
     /* 安全上限：最长守护 45 秒，绝不常驻 */
@@ -148294,10 +148406,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
   if (W.__CTB_BOOT_GUARD_198__) return;
   W.__CTB_BOOT_GUARD_198__ = 1;
   var T0 = Date.now(), PROTECT_MS = 20000;
-  function lock(){
-    var t = String(W.__CUR_TAB__ || '');
-    return (Date.now() - T0) < PROTECT_MS && (t === '' || t === 'overview');
-  }
+  function lock(){ return false; }   /* [PageBus] v198 已下线 */
   function wrapName(n){
     var f = W[n];
     if (typeof f !== 'function' || f.__bg198) return;
@@ -148347,7 +148456,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
   var deferred = [], userTouched = false;
 
   function curTab() { try { return String(W.__CUR_TAB__ || 'overview'); } catch (e) { return 'overview'; } }
-  function frozen() { return (Date.now() - T0) < PROTECT && !userTouched && curTab() === 'overview'; }
+  function frozen() { return false; }   /* [PageBus] v199-A 已下线 */
 
   /* 需要推迟的"抢正文"入口：三个老守卫名 + 真正实现 V2 + 知识点库全部渲染入口 */
   var WATCH = ['renderKbQueryFixedV2', 'renderKbQueryFixed', 'renderKbPanel',
@@ -148419,7 +148528,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
     try { W.addEventListener(ev, onUser, true); } catch (e) { }
   });
 
-  setTimeout(flush, PROTECT + 400);
+  /* [PageBus] 不再补跑被推迟的抢页渲染 */
 
   /* ================= B. 退出按钮全量兜底 ================= */
   /* 已知的全屏/弹层容器：关闭这些才算"退出生效" */
