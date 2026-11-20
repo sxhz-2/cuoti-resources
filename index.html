@@ -81247,11 +81247,16 @@ else document.addEventListener('DOMContentLoaded',mountFab);
     try { clearTimeout(hardT); } catch (e) { }
     try { clearInterval(wdT); } catch (e) { }
     try { if (v) { v.pause(); v.removeAttribute('src'); try { v.load(); } catch (e) { } } } catch (e) { }
-    if (ov && ov.parentNode) { try { ov.parentNode.removeChild(ov); } catch (e) { } }
-    ov = null; v = null;
-    killBoot();
+    killBoot();                        /* 10.202：先隐藏 boot，避免 splash 揭开瞬间闪出「正在启动」白屏 */
     surface();
     paintHome();
+    /* 10.202：保留 splash 遮罩，等看板 + 「提分三件套」注入完成（约 300ms）再揭开，
+       消除「看板无三件套 → 有三件套」的中间态闪动。 */
+    setTimeout(function () {
+      if (ov && ov.parentNode) { try { ov.parentNode.removeChild(ov); } catch (e) { } }
+      ov = null; v = null;
+      setTimeout(surface, 50);
+    }, 300);
     setTimeout(surface, 600);
     setTimeout(surface, 1800);
     say('done: ' + reason);
