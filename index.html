@@ -70,7 +70,11 @@
     });
   } catch (e) { }
 
-  /* ② 切页闸门：未交互时只允许落在看板（best-effort，正文闸门为主） */
+  /* ② 切页闸门：未交互时只允许落在看板（best-effort，正文闸门为主）。
+        10.201 幂等短路：锁定期内重复的 switchTab('overview') 若正文已是看板，
+        直接跳过整页重写——否则每次重写都会清掉「提分三件套 / 今日汇总」等
+        事后注入卡片，再由各自的 setTimeout 重新插入，形成「写→插→写→插」的
+        视觉闪动（实测启动期 switchTab('overview') 被连调 6 次，看板闪 6 下）。 */
   var _st = null;
   try {
     Object.defineProperty(W, 'switchTab', {
@@ -80,6 +84,15 @@
         if (typeof f !== 'function') { _st = f; return; }
         _st = function (tab) {
           if (locked() && String(tab) !== 'overview') { suppressed++; return; }
+          if (locked() && String(tab) === 'overview') {
+            try {
+              var mc = W.document && W.document.getElementById('mainContent');
+              if (mc && (mc.textContent || '').indexOf('\u6570\u636e\u770b\u677f') >= 0) {
+                /* 已是看板，跳过重复整页重写，保留已注入的卡片 */
+                return;
+              }
+            } catch (e) { }
+          }
           return f.apply(this, arguments);
         };
       }
@@ -66254,12 +66267,12 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
       return r;
     };
   }
-  var _deb=null;
-  var mc0=document.getElementById('mainContent');
-  if(mc0 && window.MutationObserver){
-    new MutationObserver(function(){ clearTimeout(_deb); _deb=setTimeout(function(){ if(window.__CUR_TAB__==='overview'){ injectHomeShortcuts(); initOverviewLinks(); } },120); })
-      .observe(mc0, {childList:true, subtree:true});
-  }
+  /* 10.201 去振荡：不再用 subtree MutationObserver 反复注入「提分三件套」。
+     旧实现监听 mainContent 的任意子树变化（含自己插入的卡片、initOverviewLinks 加
+     data-bound 属性）→ 每次变化又调度一次注入，与 __CTB_TABGUARD__.clean() 的删除
+     互相触发，形成「注入→删→再注入」的自激振荡，视觉上就是看板反复闪动。
+     现在只靠两处确定性调用点：switchTab('overview') 后 60ms（上方已保留）与 init 后
+     120ms（下方），注入一次即止；injectHomeShortcuts 自身已有 getElementById 防重。 */
   function init(){ injectHomeShortcuts(); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,120); });
   else setTimeout(init,120);
@@ -80169,12 +80182,9 @@ else document.addEventListener('DOMContentLoaded',mountFab);
       return r;
     };
   }
-  var _d=null;
-  var m0=document.getElementById('mainContent');
-  if(m0 && window.MutationObserver){
-    new MutationObserver(function(){ clearTimeout(_d); _d=setTimeout(function(){ if(window.__CUR_TAB__==='overview') injectSubjectStats(); },150); })
-      .observe(m0,{childList:true,subtree:true});
-  }
+  /* 10.201 去振荡：injectSubjectStats 函数体已在上方 return 禁用（按科目统计已并入
+     主看板 renderOverview），但这里的 subtree MutationObserver 仍在每次看板变化时被
+     触发（虽回调立即 return，仍是无谓的连锁开销）。一并移除，只保留一次确定调用。 */
   if(window.__CUR_TAB__==='overview' || !window.__CUR_TAB__) setTimeout(injectSubjectStats,180);
 })();
 </script>
@@ -80747,27 +80757,17 @@ else document.addEventListener('DOMContentLoaded',mountFab);
     window.switchTab = wrapped;
   }
 
-  var deb = null;
-  function watch() {
-    var mc = mcEl();
-    if (!mc) return;
-    if (window.MutationObserver) {
-      new MutationObserver(function () {
-        clearTimeout(deb);
-        deb = setTimeout(clean, 90);
-      }).observe(mc, { childList: true });
-    }
-  }
-
+  /* 10.201 去振荡：不再用 MutationObserver 反复触发 clean()。
+     旧实现监听 mainContent 的任意 childList 变化 → 90ms 后 clean()；而 clean() 删除
+     homeShortcuts 又会触发 injectHomeShortcuts 侧的变化，两个 observer 互相喂招，
+     造成「注入→删→再注入」的看板闪动。现在 clean() 只在 switchTab 包装里按固定
+     时点调用（下方 hook() 已含 60/260/900ms 三次），删掉 observer 与 40 次高频重 hook。 */
   function boot() {
     hook();
-     
-    var n = 0, t = setInterval(function () { hook(); if (++n > 40) clearInterval(t); }, 250);
-    watch();
     clean();
     setTimeout(clean, 400);
     setTimeout(clean, 1200);
-    setTimeout(function () { watch(); clean(); }, 2500);
+    setTimeout(clean, 2500);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
@@ -122099,7 +122099,12 @@ var C124_SKIP = /^(c123|c124|c120|c121|topbar|sidebar|ctbExitBar)/i;
 function c124BallSweep() {
   if (!D.body) return 0;
    
-  try { W.C123 && W.C123.hub && W.C123.hub.scan(); } catch (e) { }
+  /* 10.201：启动期自动扫球用 quiet 模式，不弹「重新扫描完成」toast。
+     旧实现调 C123.hub.scan() 会 say()，而本函数在启动期被连调 7 次（boot + 6 个
+     setTimeout），于是「重新扫描完成 新增 X 个元素」反复弹、反复触发重排，
+     配合其它 MutationObserver 连锁重渲染正文，正是「打开总球框也闪」的诱因之一。
+     「重新扫描」toast 仍保留在用户主动点总球框内「↻ 重新扫描」按钮时（C123.hub.scan）。 */
+  try { if (W.hScan123) W.hScan123(true); } catch (e) { }
   var all = D.body.querySelectorAll('*'), added = 0;
   for (var i = 0; i < all.length; i++) {
     var e = all[i]; if (!e || e.nodeType !== 1) continue;
@@ -123457,9 +123462,13 @@ function kbFabIntoHub() {
     }
   } catch (_) { }
    
+  /* 10.201：kbFabIntoHub 被 c126Ensure 的 setInterval(500ms) 反复调用，
+     旧实现在这里调 C123.hub.scan()（内部会 say「重新扫描完成」），只要
+     kbBrowserFab 尚未入 hub 就会反复弹 toast、反复扫球重排。改用 quiet 扫描
+     hScan123(true) 完成同样的「收进 hub」动作，不弹 toast。 */
   try {
-    if (W.C123 && W.C123.hub && typeof W.C123.hub.scan === 'function') {
-      W.C123.hub.scan();
+    if (typeof W.hScan123 === 'function') {
+      W.hScan123(true);
       return true;
     }
   } catch (_) { }
