@@ -121412,6 +121412,10 @@ function hRenderMenu123() {
   if (m.__sig === h) return;
   m.__sig = h;
   m.innerHTML = h;
+  /* 10.208：整块重写会连带清掉 c124 的「补收的悬浮球」区块，而 c124ExtraMenu 靠
+     自身内容签名认为「已经建过」不再重建 → 每次打开菜单都会少一块入口。
+     这里重置其签名并就地重建，保证整块重写后内容仍然完整（只追加一次，不产生抖动）。 */
+  try { m.__extraSig = ''; if (typeof c124ExtraMenu === 'function') c124ExtraMenu(); } catch (e) { }
 }
 
  
@@ -147183,13 +147187,21 @@ return out;
   }
   var idle = 0, busy = false;
   function tick() {
+    /* 10.208：注入器永久让位给 10.186 清理器。
+       旧行为：本函数每 2600ms 把「🎬 视频九维」按钮塞进卡片、把同款菜单行插到
+       #c123Menu 首行；而 10.186 的 stripCardBtn 用「250ms 去抖 Observer + 2500ms 巡检」
+       把 [data-v9x]/[data-v9x-menu] 全删。插入与删除周期不同步 → 菜单子节点在
+       16↔17 之间无限往返，那一行每 2.5 秒出现一次又消失，并把下面所有项目整体
+       顶下 43px 再弹回，肉眼即「总悬浮球框打开后里面项目一直在闪」。
+       10.186 已宣告接管（__CTB186_STRIP__），本注入器不再写任何 DOM，循环从源头断开。 */
+    if (W.__CTB186_STRIP__) return;
     if (busy) return; busy = true;
     var n = 0;
     try { n = inject(); } catch (e) { }
     try { n += injectMenu(); } catch (e2) { }
     idle = n ? 0 : idle + 1; busy = false;
   }
-  try { W.setInterval(function () { if (idle <= 4 || idle % 4 === 0) tick(); }, 2600); } catch (e) { }
+  try { W.setInterval(function () { if (W.__CTB186_STRIP__) return; if (idle <= 4 || idle % 4 === 0) tick(); }, 2600); } catch (e) { }
   try {
     D.addEventListener('click', function () {
       [80, 320, 900].forEach(function (ms) { try { W.setTimeout(tick, ms); } catch (e) { } });
@@ -147353,19 +147365,33 @@ return out;
      这里用收敛式 Observer + 低频巡检把它们（含菜单行）移除；播放器本体与
      点击委托保留不动，仅供稿源下拉「高考要点」调用。 */
   function stripCardBtn() {
-    var removed = 0;
+    /* 10.208：宣告清理器已接管。10.183 的注入器读到该标志后永久停手，
+       从此不再出现「2.6s 插入 → 0.25s 删除 → 再插入」的互抢循环
+       （这正是总悬浮球框打开后内部项目持续闪动的真因）。 */
+    W.__CTB186_STRIP__ = 1;
+    var removed = 0, quietRuns = 0;
     function kill() {
       /* 10.187：任何播放面板开着（含退出过程）一律停手，绝不与其关闭逻辑互抢，消除闪动/退不出 */
       if (anyPanelOpen()) return 0;
       var nodes = D.querySelectorAll ? D.querySelectorAll('[data-v9x],[data-v9x-menu]') : [];
+      var hit = 0;
       for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         /* 只删「按钮 / 菜单行」，绝不碰播放器本体（v84Modal 内无 data-v9x 标记） */
         if (n.getAttribute && (n.getAttribute('data-v9x') || n.getAttribute('data-v9x-menu'))) {
-          try { if (n.parentNode) { n.parentNode.removeChild(n); removed++; } } catch (e) { }
+          try { if (n.parentNode) { n.parentNode.removeChild(n); hit++; } } catch (e) { }
         }
       }
-      return removed;
+      removed += hit;
+      /* 10.208：连续 4 次巡检零删除 = 注入侧确实已停手，不再需要高频全页属性查询；
+         退到 8 秒长间隔兜底，既保留防御又几乎零开销。 */
+      if (hit) quietRuns = 0;
+      else if ((quietRuns += 1) >= 4 && !W.__c186Slow) {
+        W.__c186Slow = 1;
+        try { if (W.__c186Timer) clearInterval(W.__c186Timer); } catch (e) { }
+        W.__c186Timer = W.setInterval(function () { if (!anyPanelOpen()) kill(); }, 8000);
+      }
+      return hit;
     }
     kill();
     if (D.body && !D.body.__c186Mo) {
@@ -147373,6 +147399,7 @@ return out;
         var pend = null;
         D.body.__c186Mo = new MutationObserver(function () {
           if (anyPanelOpen()) return;              /* 面板期完全静默 */
+          if (W.__c186Slow) return;                /* 10.208：已收敛，不再做空转查询 */
           if (pend) return;
           pend = W.setTimeout(function () { pend = null; kill(); }, 250);  /* 去抖，避免逐次重绘 */
         });
