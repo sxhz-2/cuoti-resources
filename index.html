@@ -121099,8 +121099,16 @@ function hSave123() {
 }
 function hKey123(e, lab, i, kind) {
   if (e.id) return e.id;
-  var base = String(e.className || '').replace(/\s+/g, '_').slice(0, 24) + '_' + kNorm(lab).slice(0, 12);
-  return 'c123auto_' + kind + '_' + base + '_' + i;
+  /* 10.203：旧实现用 DOM 序号 i 拼 key —— 页面任何增删都会让同一颗球换 key，
+     被当成「新元素」重复登记，总球框菜单无限增长并反复重写 innerHTML，
+     这正是「打开总球框还在闪」的根因。改为一次性写入 data-c123uid 的稳定 key。 */
+  var uid = e.getAttribute('data-c123uid');
+  if (!uid) {
+    H123.uid = (H123.uid || 0) + 1;
+    uid = String(H123.uid);
+    try { e.setAttribute('data-c123uid', uid); } catch (er) { }
+  }
+  return 'c123auto_' + kind + '_' + uid;
 }
 
  
@@ -121261,6 +121269,22 @@ function hAllIn123() {
  
 function hScan123(quiet) {
   if (!D.body) return 0;
+  /* 10.203：重入保护 + 节流。本函数对整份 body 做 querySelectorAll('*')，
+     并逐元素 getComputedStyle / getBoundingClientRect（强制同步布局）。
+     c126Ensure 每 500ms、c124BallSweep 启动期连调 7 次都会进来，
+     在 26MB 巨型 DOM 上就是持续掉帧 + 菜单被反复重写 → 总球框一直闪。 */
+  var nowScan = Date.now();
+  if (H123.scanning) return 0;
+  /* 10.207：菜单打开期间暂停一切静默扫描。
+     用户正看着菜单，后台再登记新球 / 重写菜单就是肉眼上的「球框一直在闪」。
+     注意 hOpenBall123 是先 hScan123(true) 再置 ballOpen=true，打开动作本身仍有扫描。 */
+  if (quiet && H123.ballOpen) return 0;
+  /* 10.205：静默扫描间隔从 800ms 提到 3000ms。全量 body 扫描 + 逐元素 getComputedStyle
+     是「拖影/闪烁」的主要功耗来源；启动期新增的悬浮球由 c124BallSweep 的 6 个
+     setTimeout 与 hOpenBall123 的即时扫描兜住，不需要 3 秒内重复全量扫。 */
+  if (quiet && H123.lastScan && nowScan - H123.lastScan < 3000) return 0;
+  H123.scanning = true; H123.lastScan = nowScan;
+  try {
   var all = D.body.querySelectorAll('*'), added = 0;
   for (var i = 0; i < all.length; i++) {
     var e = all[i]; if (!e || e.nodeType !== 1) continue;
@@ -121293,9 +121317,19 @@ function hScan123(quiet) {
       else hDockInfo123(it);
     } else hApply123(it);
   }
-  if (added) { hSave123(); hRenderMenu123(); hRenderSide123(); }
+  if (added) {
+    hSave123();
+    /* 10.203：静默扫描（c126Ensure 每 500ms / c124BallSweep 启动期连调）不再重写
+       已打开的菜单；只有用户主动点「↻ 重新扫描」（quiet=false）或菜单未打开时才重建。
+       旧实现无条件 hRenderMenu123()，等于每 500ms 把你眼前的菜单 innerHTML 清空重画一次，
+       这就是「总悬浮球框打开还在闪」的直接原因。 */
+    if (!quiet || !H123.ballOpen) { hRenderMenu123(); hRenderSide123(); }
+  }
   if (!quiet) hBadge123();
   return added;
+  } finally {
+    H123.scanning = false;
+  }
 }
 
  
@@ -121372,6 +121406,11 @@ function hRenderMenu123() {
     '<button onclick="C123.hub.allIn()">全部收回</button>' +
     '<button onclick="C123.hub.openSide()">🩺 诊断中心</button>' +
     '<button onclick="C123.hub.reset()">恢复默认</button></div>';
+  /* 10.204：内容签名不变就不重写 innerHTML。旧实现每次调用都整块清空重画，
+     而 c126Ensure(500ms) / c124BallSweep / c128DockKbFab 都会调到这里 ——
+     菜单被清空的那一瞬间高度塌成 0，下一帧又画回来，肉眼就是「球框一直在闪」。 */
+  if (m.__sig === h) return;
+  m.__sig = h;
   m.innerHTML = h;
 }
 
@@ -121772,6 +121811,13 @@ function a123Refresh(id, force) {
 }
 function a123Scan() {
   if (!D.body) return 0;
+  /* 10.205：c126Ensure 每 500ms 调用本函数，全量遍历 .wrong-item 并逐条 a123Sync，
+     在 26MB 单文件里等于每半秒做一轮 DOM 读写 + 强制布局，
+     菜单打开时被肉眼看成「球框一直在闪」。加 1200ms 节流：
+     只有用户新增/刷新错题（__renderFiltered 包装）时才会立即重扫。 */
+  var __t123 = Date.now();
+  if (A123.__scanT && __t123 - A123.__scanT < 1200) return 0;
+  A123.__scanT = __t123;
   var items = D.querySelectorAll('.wrong-item'), n = 0;
   for (var i = 0; i < items.length; i++) {
     var item = items[i], id = a123ItemId(item, i);
@@ -122103,6 +122149,11 @@ function c124KillHandle() {
 var C124_SKIP = /^(c123|c124|c120|c121|topbar|sidebar|ctbExitBar)/i;
 function c124BallSweep() {
   if (!D.body) return 0;
+  /* 10.207：菜单打开期间暂停全量扫球 + N124.extra 登记。
+     c124ExtraMenu 每次 append 新块都会让菜单高度忽塌忽撑；用户正盯着菜单时
+     后台还在登记新球，肉眼就是「球框一直闪」。关菜单后 c126Ensure 每 500ms
+     会补扫，不丢球。菜单开关以 H123.ballOpen 为准（与 hScan123 同一把尺）。 */
+  if (W.H123 && W.H123.ballOpen) return 0;
    
   /* 10.201：启动期自动扫球用 quiet 模式，不弹「重新扫描完成」toast。
      旧实现调 C123.hub.scan() 会 say()，而本函数在启动期被连调 7 次（boot + 6 个
@@ -122122,7 +122173,15 @@ function c124BallSweep() {
     var r; try { r = e.getBoundingClientRect(); } catch (er2) { continue; }
     if (r.width < 14 || r.height < 14 || r.width > 380 || r.height > 260) continue;
     if (r.width > W.innerWidth * 0.72 && r.height > W.innerHeight * 0.68) continue;
-    var key = e.id || ('c124ball_' + i);
+    /* 10.206：旧实现用 DOM 序号 i 拼 key —— 页面任何增删都会让同一个悬浮球换 key，
+       被反复当「新球」登记，N124.extraOrder 只增不减，c124ExtraMenu 每次 append
+       新块 → 菜单高度忽塌忽撑，肉眼就是「总球框一直闪」。改写入 data-c124uid 的稳定 key。 */
+    var key = e.id || e.getAttribute('data-c124ball') || e.getAttribute('data-c124uid');
+    if (!key) {
+      N124.uid = (N124.uid || 0) + 1;
+      key = 'c124ball_' + N124.uid;
+      try { e.setAttribute('data-c124uid', String(N124.uid)); } catch (er3) { }
+    }
     var lab = String(e.getAttribute('title') || e.getAttribute('aria-label') || e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 20) || ('功能 ' + (i + 1));
     e.setAttribute('data-c124ball', key);
     N124.extra[key] = { el: e, label: lab, out: false };
@@ -122137,8 +122196,18 @@ function c124BallSweep() {
 }
 function c124ExtraMenu() {
   var m = D.getElementById('c123Menu'); if (!m) return;
+  /* 10.206：先算内容签名。c124BallSweep 只要判定 added>0 就会进来一次，
+     旧实现无条件「删旧块 + append 新块」——菜单高度瞬间塌成 0 再撑开，
+     这就是「总球框一直闪」的直接来源。内容没变就直接返回，不动 DOM。 */
+  var __sig = N124.extraOrder.map(function (k) { var q = N124.extra[k]; return k + ':' + (q ? q.label : ''); }).join('|');
+  if (m.__extraSig === __sig) return;
+  m.__extraSig = __sig;
+  if (!N124.extraOrder.length) {
+    var old0 = m.querySelector('[data-c124extra]');
+    if (old0 && old0.parentNode) old0.parentNode.removeChild(old0);
+    return;
+  }
   var old = m.querySelector('[data-c124extra]'); if (old && old.parentNode) old.parentNode.removeChild(old);
-  if (!N124.extraOrder.length) return;
   var box = D.createElement('div'); box.setAttribute('data-c124extra', '1');
   var h = '<div class="c123-gh" style="padding:6px 9px;font-size:11px;color:#6b7c8c;">补收的悬浮球（' + N124.extraOrder.length + ' 个 · 一个都没删）</div>';
   N124.extraOrder.forEach(function (k) {
