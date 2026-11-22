@@ -621,7 +621,8 @@ try {
   'use strict';
   var W = window;
   if (W.CTB_ANS) return;
-  try { W.__APP_BUILD__ = '10.119'; W.__CTB_BUILD__ = '10.119'; } catch (e) { }
+  try { W.__APP_BUILD__ = '10.216'; W.__CTB_BUILD__ = '10.216'; } catch (e) { }
+  try { W.__CTB_MENU_VER__ = '10.216'; } catch (e) { }
 
   
 
@@ -2022,14 +2023,14 @@ try {
     return { body: s.slice(i + 1, j), end: j + 1 };
   }
 
-  function core(s) {
+  function coreRaw(s) {
     s = s.replace(/\\[dt]?frac/g, '\\frac');
     s = s.replace(/\\[dt]?sqrt/g, '\\sqrt');
     var out = '', i = 0, n = s.length;
     while (i < n) {
       if (s.substr(i, 5) === '\\frac') {
         var a = brace(s, i + 5), b = brace(s, a.end);
-        var nr = core(a.body).trim(), dr = core(b.body).trim();
+        var nr = coreRaw(a.body).trim(), dr = coreRaw(b.body).trim();
         out += (/^[\w\.]+$/.test(nr) && /^[\w\.]+$/.test(dr)) ? (nr + '/' + dr) : ('(' + nr + ')/(' + dr + ')');
         i = b.end; continue;
       }
@@ -2040,20 +2041,20 @@ try {
           if (e > 0) { idx = s.slice(k + 1, e); k = e + 1; }
         }
         var r = brace(s, k);
-        var body = core(r.body).trim();
+        var body = coreRaw(r.body).trim();
         out += (idx ? '√[' + idx + ']' : '√') + (/^[\w\.]+$/.test(body) ? body : '(' + body + ')');
         i = r.end; continue;
       }
       var m = /^\\(mathrm|text|mathbf|mathit|mathsf|mathtt|operatorname|mathcal|boldsymbol|mbox)\b/.exec(s.slice(i));
       if (m) {
         var rr = brace(s, i + m[0].length);
-        out += core(rr.body);
+        out += coreRaw(rr.body);
         i = rr.end; continue;
       }
       var m2 = /^\\(vec|overline|hat|bar|widehat|widetilde)\b/.exec(s.slice(i));
       if (m2) {
         var rr2 = brace(s, i + m2[0].length);
-        var bb = core(rr2.body);
+        var bb = coreRaw(rr2.body);
         if (m2[1] === 'vec') out += bb + '\u20d7';
         else if (m2[1] === 'overline' || m2[1] === 'bar') out += bb + '\u0304';
         else out += bb + '\u0302';
@@ -2062,7 +2063,7 @@ try {
       var m4 = /^\\overrightarrow\b/.exec(s.slice(i));
       if (m4) {
         var rr4 = brace(s, i + m4[0].length);
-        out += core(rr4.body) + '\u20d7';
+        out += coreRaw(rr4.body) + '\u20d7';
         i = rr4.end; continue;
       }
       
@@ -2070,7 +2071,7 @@ try {
       var m5 = /^\\(stackrel|overset|underset)\b/.exec(s.slice(i));
       if (m5) {
         var t1 = brace(s, i + m5[0].length), t2 = brace(s, t1.end);
-        var top = core(t1.body).trim(), bot = core(t2.body).trim();
+        var top = coreRaw(t1.body).trim(), bot = coreRaw(t2.body).trim();
         out += bot + (top ? '(' + top + ')' : '');
         i = t2.end; continue;
       }
@@ -2104,7 +2105,7 @@ try {
           
 
           var nx = s.charAt(i + m3[0].length);
-          if (nx === '{') { var rg = brace(s, i + m3[0].length); out += core(rg.body); i = rg.end; continue; }
+          if (nx === '{') { var rg = brace(s, i + m3[0].length); out += coreRaw(rg.body); i = rg.end; continue; }
           i += m3[0].length; continue;
         }
         var nc = s.charAt(i + 1);
@@ -2124,7 +2125,16 @@ try {
     return out;
   }
 
-  function lx(txt) {
+  var __coreCache = Object.create(null), __coreN = 0;
+  function core(s) {
+    var k = s;
+    var v = __coreCache[k];
+    if (v !== undefined) return v;
+    v = coreRaw(s);
+    if (__coreN < 8000) { __coreCache[k] = v; __coreN++; }
+    return v;
+  }
+  function lxRaw(txt) {
     if (txt == null) return '';
     var s = String(txt);
     
@@ -2160,6 +2170,16 @@ try {
     return s.trim();
   }
 
+  var __lxCache = Object.create(null), __lxN = 0;
+  function lx(txt) {
+    if (txt == null) return '';
+    var k = String(txt);
+    var v = __lxCache[k];
+    if (v !== undefined) return v;
+    v = lxRaw(txt);
+    if (__lxN < 8000) { __lxCache[k] = v; __lxN++; }
+    return v;
+  }
   root.LX = lx;
   if (typeof module !== 'undefined' && module.exports) module.exports = lx;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -67102,7 +67122,7 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
   var MANIFEST = 'manifest.json';
   
 
-  var BUILD = '10.119';
+  var BUILD = '10.216';
 
   
 
@@ -68906,7 +68926,18 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         device: ls(K.dev), ts: Date.now(),
         /* 10.210：使用台账（最近 7 天 · 每天最多 80 条精简记录）挂在 state 上一并上传，
            与错题同步共用同一次请求，不额外增加连接数与往返。 */
-        usage: (window.CTB210 && window.CTB210.export) ? window.CTB210.export(7) : null
+        usage: (window.CTB210 && window.CTB210.export) ? window.CTB210.export(7) : null,
+        /* 10.216：AI 模型参数随 state 同步 —— 主设备配置一次，其它设备拉取即可用。
+           只上传真正有密钥的配置，避免空配置覆盖云端已有参数。 */
+        aiCfg: (function () {
+          try {
+            var c = JSON.parse(localStorage.getItem('aiRecog_cfg') || '{}') || {};
+            var has = false;
+            if (c.keys) { for (var k in c.keys) { if (String(c.keys[k] || '').trim()) { has = true; break; } } }
+            if (!has && String(c.pass || '').trim()) has = true;
+            return has ? c : null;
+          } catch (e) { return null; }
+        })()
       }
     };
     var p1 = rows.length ? syncWithTimeout(sp.from(T_ITEM).upsert(rows, { onConflict: 'user_id,item_id', ignoreDuplicates: false }), 25000) : Promise.resolve({ error: null });
@@ -68957,6 +68988,25 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
             /* 10.210：合并云端使用台账 —— 只补本地缺的日期，绝不覆盖本地更完整的记录 */
             if (st.payload.usage && window.CTB210 && window.CTB210.merge) {
               got += window.CTB210.merge(st.payload.usage) || 0;
+            }
+            /* 10.216：别的设备配置过 AI 参数时，本地若还没有有效密钥就整份采用。
+               本地已有密钥则以本地为准（多设备谁是主设备由首次配置者决定），绝不反向覆盖。 */
+            if (st.payload.aiCfg && typeof st.payload.aiCfg === 'object') {
+              var lc = {}, cc = st.payload.aiCfg;
+              try { lc = JSON.parse(localStorage.getItem('aiRecog_cfg') || '{}') || {}; } catch (e) { lc = {}; }
+              var localHas = false;
+              if (lc.keys) { for (var lk in lc.keys) { if (String(lc.keys[lk] || '').trim()) { localHas = true; break; } } }
+              if (!localHas && String(lc.pass || '').trim()) localHas = true;
+              if (!localHas) {
+                try {
+                  localStorage.setItem('aiRecog_cfg', JSON.stringify(cc));
+                  localStorage.setItem('ctb_ai_cfg_bak', JSON.stringify(cc));
+                } catch (e) { }
+                got += 1;
+                if (manual) toast('已同步主设备的 AI 模型参数');
+                /* 通知配置界面/模块重新读取，无需用户重开 */
+                try { window.dispatchEvent(new Event('ctb:aicfg:synced')); } catch (e) { }
+              }
             }
           } catch (e) { }
         }
@@ -116708,8 +116758,31 @@ body.ctb116Land [data-ctb117-files] > * { flex: 0 1 auto !important; min-width: 
      
     /* 10.213：开机不再同步全树扫描（4×CPU 下实测 11.4 秒阻塞首屏），
        推迟到空闲回调，且只处理真正需要清理的节点。 */
+    /* 10.215：开机全树扫描改为分块 idle —— 单次 TreeWalker 扫完 26MB DOM 是几十~上百ms 长任务，
+       拆成每段 <=4ms 的片段，逐段让出主线程，消除冷启动掉帧。MutationObserver 的小子树扫描不变。 */
     var kick = function () {
-      try { scanNode(D.body); if (pending.length) { scheduled = true; setTimeout(flush, 160); } } catch (e) { }
+      var tw = null, n;
+      try {
+        var els = D.body.querySelectorAll ? D.body.querySelectorAll('[data-kraw]') : [];
+        for (var e = 0; e < els.length; e++) queueNode(els[e]);
+        tw = D.createTreeWalker ? D.createTreeWalker(D.body, NodeFilter.SHOW_TEXT, null, false) : null;
+      } catch (e) { }
+      if (!tw) { if (pending.length) { scheduled = true; setTimeout(flush, 160); } return; }
+      var step = function (deadline) {
+        var bud = (deadline && deadline.timeRemaining) ? deadline.timeRemaining() : 6;
+        var t0 = Date.now(); var guard = 0;
+        while ((bud > 3 || Date.now() - t0 < 3) && guard++ < 400) {
+          var x = tw.nextNode(); if (!x) {
+            if (pending.length && !scheduled) { scheduled = true; setTimeout(flush, 160); }
+            return;
+          }
+          if (needClean(x.nodeValue)) queueNode(x);
+        }
+        if (W.requestIdleCallback) W.requestIdleCallback(step, { timeout: 4000 });
+        else setTimeout(function () { step(null); }, 40);
+      };
+      if (W.requestIdleCallback) W.requestIdleCallback(step, { timeout: 4000 });
+      else setTimeout(function () { step(null); }, 2500);
     };
     if (W.requestIdleCallback) W.requestIdleCallback(kick, { timeout: 6000 });
     else setTimeout(kick, 2500);
@@ -121193,6 +121266,7 @@ function hCss123() {
     '#c123Menu .c123-mrow button.gray{background:#eef3f8;color:#46586a;border-color:#d7e2ee;}',
     '#c123Menu .c123-mfoot{padding:8px 9px;display:flex;gap:6px;flex-wrap:wrap;}',
     '#c123Menu .c123-mfoot button{border:1px solid #d7e2ee;background:#eef3f8;color:#46586a;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;}',
+    '#c123Menu .c123-mver{padding:6px 10px 9px;text-align:center;font-size:10.5px;color:#9aa9b6;border-top:1px solid #f0f4f7;margin-top:2px;}',
     '#c123Handle{position:fixed;z-index:100328;right:0;top:42%;width:20px;height:92px;border-radius:9px 0 0 9px;background:linear-gradient(160deg,#2D5F8A,#0e7a66);color:#fff;writing-mode:vertical-rl;display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:2px;cursor:pointer;box-shadow:-3px 3px 12px rgba(10,45,70,.25);user-select:none;}',
     '#c123Handle.on{right:min(300px,86vw);}',
     '#c123Side{position:fixed;top:0;bottom:0;right:0;z-index:100327;width:min(300px,86vw);background:#fff;color:#1c2b3a;box-shadow:-6px 0 26px rgba(0,0,0,.22);transform:translateX(105%);transition:transform .22s ease;display:flex;flex-direction:column;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;}',
@@ -121451,6 +121525,9 @@ function hRenderMenu123() {
     '<button onclick="C123.hub.allIn()">全部收回</button>' +
     '<button onclick="C123.hub.openSide()">🩺 诊断中心</button>' +
     '<button onclick="C123.hub.reset()">恢复默认</button></div>';
+  /* 10.216：菜单栏最底部固定显示当前版本号，便于核对已装/已发布版本 */
+  /* 用独立常量，避免 c129Bump/c130Bump 把 __CTB_BUILD__ 改回旧版本号 */
+  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.216') + ' · 智能错题本</div>';
   /* 10.204：内容签名不变就不重写 innerHTML。旧实现每次调用都整块清空重画，
      而 c126Ensure(500ms) / c124BallSweep / c128DockKbFab 都会调到这里 ——
      菜单被清空的那一瞬间高度塌成 0，下一帧又画回来，肉眼就是「球框一直在闪」。 */
@@ -139711,21 +139788,24 @@ window.__CTB144_SERIES__ = [
     ['数学', /函数|数列|三角|圆锥|双曲线|椭圆|抛物线|导数|概率|立体几何|向量|不等式|集合|复数|二项式/]
   ];
   function byKw(t) { t = S(t); for (var i = 0; i < KW.length; i++) if (KW[i][1].test(t)) return KW[i][0]; return ''; }
+  var __fkCache = Object.create(null);
   function fromKp(kp) {
     if (!kp) return '';
+    if (__fkCache[kp] !== undefined) return __fkCache[kp];
+    var __fkRet = '';
     try {
       var pool = (W.KB_POOL_REAL || []).concat(W.KB_POOL_EXTRA || []), i;
-      for (i = 0; i < pool.length; i++) if (pool[i] && S(pool[i].kp) === kp && norm(pool[i].subject)) return norm(pool[i].subject);
-      for (i = 0; i < pool.length; i++) if (pool[i] && S(pool[i].kp).indexOf(kp) >= 0 && norm(pool[i].subject)) return norm(pool[i].subject);
+      for (i = 0; i < pool.length; i++) if (pool[i] && S(pool[i].kp) === kp && norm(pool[i].subject)) { __fkRet = norm(pool[i].subject); return __fkCache[kp]=__fkRet; }
+      for (i = 0; i < pool.length; i++) if (pool[i] && S(pool[i].kp).indexOf(kp) >= 0 && norm(pool[i].subject)) { __fkRet = norm(pool[i].subject); return __fkCache[kp]=__fkRet; }
     } catch (e) { }
     try {
       var KB = W.KNOWLEDGE_BASE || {}, i2, j;
       for (i2 = 0; i2 < SUBJ9.length; i2++) {
         var bs = Object.keys(KB[SUBJ9[i2]] || {});
-        for (j = 0; j < bs.length; j++) if ((KB[SUBJ9[i2]][bs[j]] || {})[kp]) return SUBJ9[i2];
+        for (j = 0; j < bs.length; j++) if ((KB[SUBJ9[i2]][bs[j]] || {})[kp]) { __fkRet = SUBJ9[i2]; return __fkCache[kp]=__fkRet; }
       }
     } catch (e) { }
-    return '';
+    return __fkCache[kp] = '';
   }
   function visibleTitle() {
     try {
@@ -148858,6 +148938,9 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
    10.212 · 全文件问答附图（多模态透传）+ 页面卡顿治理（watchdog 节流 / 视频核验降频）
    10.213 · B站核验再收敛：view 单请求 / JSONP 完成即回收 / pump 批次节流 / 搜索摊平
    10.214 · 卡顿再治理：乱码清理器跳过 script 且全树扫描转入空闲 / sweepDom 无面板跳过；发布版
+   10.215 · 冷启动提速：公式清洗 lx/core 加缓存、知识点判定 fromKp 结果缓存、
+            开机全树扫描改为分块 idle（每段<=4ms），消除启动期长任务掉帧；
+   10.216 · 菜单栏底部固定显示版本号；AI 模型参数随 Supabase state 跨设备同步；发布版
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -149166,7 +149249,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       '<div class="stem" id="ctb210Stem"></div>' +
       '<div id="ctb210Opts"></div>' +
       '<div class="fb" id="ctb210Fb"></div>' +
-      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.214 · 防挂机</span></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.216 · 防挂机</span></div>' +
       '</div>';
     D.body.appendChild(m);
   }
