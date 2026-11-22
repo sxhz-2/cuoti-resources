@@ -116625,6 +116625,13 @@ body.ctb116Land [data-ctb117-files] > * { flex: 0 1 auto !important; min-width: 
   function needClean(s) { return S(s).length > 0 && TEXRE.test(S(s)); }
   function scanNode(root) {
     if (!root) return;
+    /* 10.213：JSONP 每秒增删 <script>，旧实现对它做 querySelectorAll+TreeWalker，
+       在 26MB DOM 上是毫秒级→累积成秒级长任务。script/style 等不可能含乱码正文，直接跳过。 */
+    if (root.nodeType === 1) {
+      var tag = root.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'IFRAME'
+          || tag === 'SVG' || tag === 'CANVAS' || tag === 'TEMPLATE') return;
+    }
     if (root.nodeType === 3) { queueNode(root); return; }
     if (root.nodeType !== 1) return;
     var els = null, i;
@@ -116683,7 +116690,15 @@ body.ctb116Land [data-ctb117-files] > * { flex: 0 1 auto !important; min-width: 
         var r = recs[i];
         if (r.type === 'characterData') queueNode(r.target);
         else if (r.type === 'attributes') queueNode(r.target);
-        else if (r.addedNodes) for (var j = 0; j < r.addedNodes.length; j++) scanNode(r.addedNodes[j]);
+        else if (r.addedNodes) for (var j = 0; j < r.addedNodes.length; j++) {
+          var an = r.addedNodes[j];
+          if (an && an.nodeType === 1) {
+            var tg = an.tagName;
+            if (tg === 'SCRIPT' || tg === 'STYLE' || tg === 'NOSCRIPT' || tg === 'IFRAME'
+                || tg === 'SVG' || tg === 'CANVAS' || tg === 'TEMPLATE') continue;
+          }
+          scanNode(an);
+        }
       }
       if (!scheduled && pending.length) { scheduled = true; setTimeout(flush, 120); }
     });
@@ -116691,7 +116706,13 @@ body.ctb116Land [data-ctb117-files] > * { flex: 0 1 auto !important; min-width: 
       mo.observe(D.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-kraw'] });
     } catch (e) { }
      
-    try { scanNode(D.body); if (pending.length) { scheduled = true; setTimeout(flush, 160); } } catch (e) { }
+    /* 10.213：开机不再同步全树扫描（4×CPU 下实测 11.4 秒阻塞首屏），
+       推迟到空闲回调，且只处理真正需要清理的节点。 */
+    var kick = function () {
+      try { scanNode(D.body); if (pending.length) { scheduled = true; setTimeout(flush, 160); } } catch (e) { }
+    };
+    if (W.requestIdleCallback) W.requestIdleCallback(kick, { timeout: 6000 });
+    else setTimeout(kick, 2500);
   }
 
    
@@ -138389,12 +138410,14 @@ window.__CTB144_SERIES__ = [
   function jsonp(url, cb) {
     var nm = '__ctb150_' + (++JQ) + '_' + Math.random().toString(36).slice(2, 7);
     var s = D.createElement('script'), done = false;
-    W[nm] = function (o) { done = true; try { cb(o); } catch (e) { } try { W[nm] = null; } catch (e) { } };
+    var cleaned = false;
+    function cleanup() { if (cleaned) return; cleaned = true; try { if (s.parentNode) s.parentNode.removeChild(s); } catch (e) { } }
+    W[nm] = function (o) { done = true; try { cb(o); } catch (e) { } try { W[nm] = null; } catch (e) { } W.setTimeout(cleanup, 120); };
     s.src = url + (url.indexOf('?') < 0 ? '?' : '&') + 'callback=' + nm + '&jsonp=jsonp';
-    s.onerror = function () { if (!done) { done = true; cb(null); } };
-    s.onload = function () { W.setTimeout(function () { if (!done) { done = true; cb(null); } }, 80); };
+    s.onerror = function () { if (!done) { done = true; cb(null); } W.setTimeout(cleanup, 120); };
+    s.onload = function () { W.setTimeout(function () { if (!done) { done = true; cb(null); } cleanup(); }, 80); };
     try { (D.head || D.body).appendChild(s); } catch (e) { cb(null); return; }
-    W.setTimeout(function () { try { if (s.parentNode) s.parentNode.removeChild(s); } catch (e) { } }, 9000);
+    W.setTimeout(cleanup, 6000);   /* 10.213：9000→6000，兜底更早释放 */
   }
   function apiGet(url, cb) {
     var done = false;
@@ -138415,31 +138438,34 @@ window.__CTB144_SERIES__ = [
     META[bv] = m; NEED = 1; saveMeta();
   }
   function verifyOne(bv, done) {
-    var settled = false, left = 2;
-    function part(o, kind) {
-      try {
-        var d = null, p = null;
-        if (kind === 'page') {
-          var a = (o && o.code === 0 && o.data) || [], i, x;
-          for (i = 0; i < a.length; i++) { x = parseInt(a[i] && a[i].duration, 10) || 0; if (x > d) d = x; }
-        } else {
-          var z = (o && o.code === 0 && o.data) || null;
-          if (z) { d = parseInt(z.duration, 10) || null; p = parseInt(z.pubdate, 10) || null; }
-        }
-        if (d != null || p != null) merge(bv, d, p);
-      } catch (e) { }
-      if (--left <= 0) end();
-    }
+    var settled = false;
     function end() { if (settled) return; settled = true; done(); }
-    apiGet('https://api.bilibili.com/x/player/pagelist?bvid=' + encodeURIComponent(bv), function (o) { part(o, 'page'); });
-    apiGet('https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bv), function (o) { part(o, 'view'); });
+    /* 10.213：view 一个接口同时给出总时长与发布时间，删掉 pagelist，请求量直接减半。
+       用总时长（而非分P最大时长）判定「≥5 分钟」也更贴合需求。 */
+    apiGet('https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bv), function (o) {
+      try {
+        var z = (o && o.code === 0 && o.data) || null;
+        if (z) {
+          var d = parseInt(z.duration, 10) || null, pp = parseInt(z.pubdate, 10) || null;
+          if (d != null || pp != null) merge(bv, d, pp);
+        }
+      } catch (e) { }
+      end();
+    });
     W.setTimeout(function () {
       if (!META[bv]) { META[bv] = { ts: Date.now(), fail: 1 }; saveMeta(); }
       end();
     }, 4200);
   }
+  var lastPump = 0, pumpTimer = null;
   function pump() {
     if (!API) return;
+    var nowP = Date.now();
+    if (nowP - lastPump < 350) {                 /* 10.213：批次间隔≥350ms，杜绝瞬时爆发 */
+      if (!pumpTimer) pumpTimer = W.setTimeout(function () { pumpTimer = null; pump(); }, 350 - (nowP - lastPump));
+      return;
+    }
+    lastPump = nowP;
     while (RUNNING < 2 && QUEUE.length) {   /* 10.212：5→2，减少 JSONP script 抖动 */
       var bv = QUEUE.shift();
       if (!bv || VERIFYING[bv]) continue;
@@ -138681,7 +138707,7 @@ window.__CTB144_SERIES__ = [
               series: '近三年·重新拉取', real: 1, celeb: 0, base: 46, d: dur, p: pub });
           }
         } catch (e) { }
-        W.setTimeout(next, 220);
+        W.setTimeout(next, 650);   /* 10.213：220→650，摊平开机搜索 burst */
       });
     }
     next();
@@ -139527,6 +139553,12 @@ window.__CTB144_SERIES__ = [
   }
   function sweepDom(meta) {
     if (IN) return 0;
+    /* 10.213：没有深讲面板打开时，本函数对全文档做 N 次 querySelectorAll，
+       4×CPU 实测单次 430ms、每 1.9 秒一次——是周期性卡顿主因。
+       没有目标面板就完全跳过；面板打开时照常工作，行为不变。 */
+    try {
+      if (!D.querySelector('#lib9AiMask.on, #lib9AiMask[data-ctb151], #ctb144TocMask.on, #lib9Mask.on, #kbnMask.on, #ctb9Box.on, #ctv9Vid.on, [data-lib9ai]')) return 0;
+    } catch (e) { }
     var b = null;
     try { b = bodies(meta); } catch (e) { b = null; }   /* bodies 自带 IN 保护 */
     if (!b) { STAT.skipped++; return 0; }
@@ -139596,7 +139628,7 @@ window.__CTB144_SERIES__ = [
     if (++tries < 40) W.setTimeout(boot, 260);
   }
   boot();
-  try { W.setInterval(function () { try { install(); sweepDom(liveMeta()); } catch (x) { } }, 1900); } catch (e) { }
+  try { W.setInterval(function () { try { install(); sweepDom(liveMeta()); } catch (x) { } }, 6000); } catch (e) { }   /* 10.213: 1900→6000 */
   [300, 900, 1800, 3200, 5200].forEach(function (ms) {
     W.setTimeout(function () { try { install(); sweepDom(liveMeta()); } catch (x) { } }, ms);
   });
@@ -148824,6 +148856,8 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
    10.210 · 使用台账（精确到分）+ 防挂机验证 + 统计与同步
    10.211 · 科目改按字段精确取（四级取数，去掉词频统计）+ AI 球建球即收纳
    10.212 · 全文件问答附图（多模态透传）+ 页面卡顿治理（watchdog 节流 / 视频核验降频）
+   10.213 · B站核验再收敛：view 单请求 / JSONP 完成即回收 / pump 批次节流 / 搜索摊平
+   10.214 · 卡顿再治理：乱码清理器跳过 script 且全树扫描转入空闲 / sweepDom 无面板跳过；发布版
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -149132,7 +149166,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       '<div class="stem" id="ctb210Stem"></div>' +
       '<div id="ctb210Opts"></div>' +
       '<div class="fb" id="ctb210Fb"></div>' +
-      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.212 · 防挂机</span></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.214 · 防挂机</span></div>' +
       '</div>';
     D.body.appendChild(m);
   }
