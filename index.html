@@ -627,8 +627,8 @@ try {
   'use strict';
   var W = window;
   if (W.CTB_ANS) return;
-  try { W.__APP_BUILD__ = '10.218'; W.__CTB_BUILD__ = '10.218'; } catch (e) { }
-  try { W.__CTB_MENU_VER__ = '10.218'; } catch (e) { }
+  try { W.__APP_BUILD__ = '10.219'; W.__CTB_BUILD__ = '10.219'; } catch (e) { }
+  try { W.__CTB_MENU_VER__ = '10.219'; } catch (e) { }
 
   
 
@@ -67121,7 +67121,7 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
   var MANIFEST = 'manifest.json';
   
 
-  var BUILD = '10.218';
+  var BUILD = '10.219';
 
   
 
@@ -87237,7 +87237,7 @@ nflog('NF9 模块已加载');
 <script>
  
 (function () {
-  var W = window, BUILD = '10.218';
+  var W = window, BUILD = '10.219';
   try { W.__APP_BUILD__ = BUILD; } catch (e) { }
   W.__BOOTERRS__ = [];
   function push(m) { if (W.__BOOTERRS__.length < 30) W.__BOOTERRS__.push(String(m).slice(0, 260)); }
@@ -100357,7 +100357,7 @@ function kpDetailHtml(mode, subj, book, kpName) {
 (function () {
   var W = window, D = document;
   var FILE = 'ctb650-sync.json';
-  var BUILD = '10.218';
+  var BUILD = '10.219';
 
   function ls(k, v) {
     try {
@@ -121686,7 +121686,7 @@ function hRenderMenu123() {
     '<button onclick="C123.hub.reset()">恢复默认</button></div>';
   /* 10.216：菜单栏最底部固定显示当前版本号，便于核对已装/已发布版本 */
   /* 用独立常量，避免 c129Bump/c130Bump 把 __CTB_BUILD__ 改回旧版本号 */
-  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.218') + ' · 智能错题本</div>';
+  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.219') + ' · 智能错题本</div>';
   /* 10.204：内容签名不变就不重写 innerHTML。旧实现每次调用都整块清空重画，
      而 c126Ensure(500ms) / c124BallSweep / c128DockKbFab 都会调到这里 ——
      菜单被清空的那一瞬间高度塌成 0，下一帧又画回来，肉眼就是「球框一直在闪」。 */
@@ -125938,8 +125938,8 @@ function c129FixDiag() {
  
 function c129Bump() {
   try {
-    W.__CTB_BUILD__ = '10.218';
-    W.__APP_BUILD__ = '10.218';
+    W.__CTB_BUILD__ = '10.219';
+    W.__APP_BUILD__ = '10.219';
     var tag = D.getElementById('ctbVerTag');
     if (tag && /10\.11\d|10\.12\d/.test(tag.textContent || '')) {
       tag.textContent = 'v10.216';
@@ -126999,7 +126999,7 @@ function c130Rebuild() {
   return true;
 }
 function c130Bump() {
-  try { W.__CTB_BUILD__ = '10.218'; } catch (e) { }   /* 10.218: 全局构建版本统一，不再被模块内部版本覆盖 */
+  try { W.__CTB_BUILD__ = '10.219'; } catch (e) { }   /* 10.219: 全局构建版本统一，不再被模块内部版本覆盖 */
   try { if (W.C128) W.C128.version = C130.ver; } catch (e) { }
   try { if (W.C127) W.C127.version = C130.ver; } catch (e) { }
   try { if (W.C121) W.C121.version = C130.ver; } catch (e) { }
@@ -149102,7 +149102,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
    10.216 · 菜单栏底部固定显示版本号；AI 模型参数随 Supabase state 跨设备同步；发布版
    10.217 · 云同步修复：LWW 保留 _u 时间戳（远端更新/删除真正生效）+ 照片双向恢复
             + online/offline 联网即时补传；APK manifest 升级 versionCode 38 / versionName 10.217
-   10.218 · AI 参数加密同步：口令只存本机，PBKDF2+AES-GCM 加密后上云（明文永不外传）；
+   10.219 · 去掉侧边栏重复权威校验菜单（总球框入口保留）：口令只存本机，PBKDF2+AES-GCM 加密后上云（明文永不外传）；
             总球框底部常驻「权威校验」入口；发布版
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
@@ -149412,7 +149412,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       '<div class="stem" id="ctb210Stem"></div>' +
       '<div id="ctb210Opts"></div>' +
       '<div class="fb" id="ctb210Fb"></div>' +
-      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.218 · 防挂机</span></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.219 · 防挂机</span></div>' +
       '</div>';
     D.body.appendChild(m);
   }
