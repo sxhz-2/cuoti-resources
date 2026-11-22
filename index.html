@@ -621,8 +621,8 @@ try {
   'use strict';
   var W = window;
   if (W.CTB_ANS) return;
-  try { W.__APP_BUILD__ = '10.216'; W.__CTB_BUILD__ = '10.216'; } catch (e) { }
-  try { W.__CTB_MENU_VER__ = '10.216'; } catch (e) { }
+  try { W.__APP_BUILD__ = '10.217'; W.__CTB_BUILD__ = '10.217'; } catch (e) { }
+  try { W.__CTB_MENU_VER__ = '10.217'; } catch (e) { }
 
   
 
@@ -67122,7 +67122,7 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
   var MANIFEST = 'manifest.json';
   
 
-  var BUILD = '10.216';
+  var BUILD = '10.217';
 
   
 
@@ -68841,12 +68841,14 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   function isBig(v) { return typeof v === 'string' && (v.indexOf('data:') === 0 || v.length > 1500); }
   function slim(o) {
     var q = {}; if (!o) return q;
-    Object.keys(o).forEach(function (k) { var v = o[k]; if (k === '_u') return; if (isBig(v)) return; q[k] = v; });
+    /* 10.217: 保留 _u 时间戳 —— mergeIn/mergePayload 的 LWW 依赖它；剥离会导致远端更新/删除永远无法覆盖本地 */
+    Object.keys(o).forEach(function (k) { var v = o[k]; if (isBig(v)) return; q[k] = v; });
     return q;
   }
   function slimArr(a) {
     return (a || []).map(function (o) { return slim(o); });
   }
+  function slimSig(o) { var q = slim(o); if (q && '_u' in q) delete q._u; return JSON.stringify(q); }
   function snapObj() { try { return JSON.parse(ls(K.snap) || '{}'); } catch (e) { return {}; } }
   function saveSnap(s) { try { ls(K.snap, JSON.stringify(s)); } catch (e) { } }
   function markChanged() {
@@ -68855,7 +68857,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     var curIds = {};
     cur.forEach(function (w) {
       var id = String(w.id); curIds[id] = 1;
-      var sig = JSON.stringify(slim(w));
+      var sig = slimSig(w);
       if (sn[id] !== sig) { w._u = now; ns[id] = sig; } else { ns[id] = sn[id]; }
       if (!w._u) w._u = Date.parse(w.date) || now;
     });
@@ -68863,7 +68865,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     saveSnap(ns);
     return tombs;
   }
-  function applySnapLocal() { var sn = {}, cur = wrongs(); cur.forEach(function (w) { sn[String(w.id)] = JSON.stringify(slim(w)); }); saveSnap(sn); }
+  function applySnapLocal() { var sn = {}, cur = wrongs(); cur.forEach(function (w) { sn[String(w.id)] = slimSig(w); }); saveSnap(sn); }
 
   function mergeIn(rows) {
     var cur = wrongs(), map = {}, i;
@@ -68873,7 +68875,8 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       var d = r.data || {};
       var id = String(d.id != null ? d.id : r.item_id);
       var lu = (map[id] != null) ? (cur[map[id]]._u || Date.parse(cur[map[id]].date) || 0) : -1;
-      var ru = d._u || 0;
+      /* 10.217: 兼容云端旧数据（旧版 slim 剥离了 _u）——用行级 updated_at 兜底 */
+      var ru = d._u || (r.updated_at ? Date.parse(r.updated_at) : 0) || 0;
       if (lu < 0) {
         if (!r.deleted) { d._u = ru || Date.now(); cur.push(d); added++; }
         return;
@@ -68984,6 +68987,11 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
             if (st.payload.papers && st.payload.papers.length && (!window.uploadedPapers || !window.uploadedPapers.length)) {
               window.uploadedPapers = st.payload.papers; got += st.payload.papers.length;
               try { if (window.savePapers) window.savePapers(); } catch (e) { }
+            }
+            /* 10.217: 照片恢复（此前 push 上传 photos 但 pull 未恢复，只上不下） */
+            if (st.payload.photos && st.payload.photos.length && (!window.uploadedPhotos || !window.uploadedPhotos.length)) {
+              window.uploadedPhotos = st.payload.photos; got += st.payload.photos.length;
+              try { if (window.savePhotos) window.savePhotos(); } catch (e) { }
             }
             /* 10.210：合并云端使用台账 —— 只补本地缺的日期，绝不覆盖本地更完整的记录 */
             if (st.payload.usage && window.CTB210 && window.CTB210.merge) {
@@ -69979,6 +69987,19 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible' && getUid() && ls(K.auto) === '1' && syncMode() !== 'github') { try { pull(false); } catch (e) { } }
     });
+    /* 10.217: 断网照常用、联网即时补传。断网时打标记；恢复联网后先拉后补传，
+       双写模式下 GitHub 归档也一并补上。没有断过网则不动作，避免重复同步。 */
+    var wasOffline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    try {
+      window.addEventListener('offline', function () { wasOffline = true; try { updChip('离线 · 本地可用', false); } catch (e) { } });
+      window.addEventListener('online', function () {
+        if (!wasOffline) return;
+        wasOffline = false;
+        if (ls(K.auto) !== '1' || !getUid()) return;
+        try { updChip('联网 · 补传中…', null); } catch (e) { }
+        setTimeout(function () { try { dispatchBoth(false); } catch (e) { } }, 1500);
+      });
+    } catch (e) { }
   }
 
    
@@ -70043,8 +70064,9 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   }
   function fmt(ms) { return ms ? new Date(ms).toLocaleString('zh-CN') : '从未'; }
   function isBig(v) { return typeof v === 'string' && (v.indexOf('data:') === 0 || v.length > 1500); }
-  function slim(o) { var q = {}; if (!o) return q; Object.keys(o).forEach(function (k) { if (k === '_u') return; var v = o[k]; if (isBig(v)) return; q[k] = v; }); return q; }
+  function slim(o) { var q = {}; if (!o) return q; /* 10.217: 保留 _u 供 LWW */ Object.keys(o).forEach(function (k) { var v = o[k]; if (isBig(v)) return; q[k] = v; }); return q; }
   function slimArr(a) { return (a || []).map(slim); }
+  function slimSig(o) { var q = slim(o); if (q && '_u' in q) delete q._u; return JSON.stringify(q); }
   function wrongs() { return (window.wrongs && window.wrongs.length != null) ? window.wrongs : []; }
   function px() { return String(ls(K.proxy) || '').trim().replace(/\/+$/, ''); }
   function apiUrl(p) { var base = px() ? (px() + '/' + API + p) : (API + p); return base; }
@@ -70097,7 +70119,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     var cur = wrongs(), now = Date.now(), ns = {}, gone = [], curIds = {};
     cur.forEach(function (w) {
       var id = String(w.id); curIds[id] = 1;
-      var sig = JSON.stringify(slim(w));
+      var sig = slimSig(w);
       if (sn[id] !== sig) { if (!w._u || sn[id]) w._u = now; ns[id] = sig; } else ns[id] = sn[id];
       if (!w._u) w._u = Date.parse(w.date) || now;
     });
@@ -70151,6 +70173,11 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         window.uploadedPapers = p.papers;
         if (window.savePapers) window.savePapers();
       }
+      /* 10.217: 照片恢复 */
+      if (p.photos && p.photos.length && (!window.uploadedPhotos || !window.uploadedPhotos.length)) {
+        window.uploadedPhotos = p.photos;
+        if (window.savePhotos) window.savePhotos();
+      }
     } catch (e) { }
      
     try {
@@ -70176,7 +70203,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       } catch (e) { }
     }
      
-    var ns = {}; wrongs().forEach(function (w) { ns[String(w.id)] = JSON.stringify(slim(w)); });
+    var ns = {}; wrongs().forEach(function (w) { ns[String(w.id)] = slimSig(w); });
     ls(K.snap, JSON.stringify(ns));
     return { added: added, updated: updated, removed: removed };
   }
@@ -87084,7 +87111,7 @@ nflog('NF9 模块已加载');
 <script>
  
 (function () {
-  var W = window, BUILD = '10.119';
+  var W = window, BUILD = '10.217';
   try { W.__APP_BUILD__ = BUILD; } catch (e) { }
   W.__BOOTERRS__ = [];
   function push(m) { if (W.__BOOTERRS__.length < 30) W.__BOOTERRS__.push(String(m).slice(0, 260)); }
@@ -100204,7 +100231,7 @@ function kpDetailHtml(mode, subj, book, kpName) {
 (function () {
   var W = window, D = document;
   var FILE = 'ctb650-sync.json';
-  var BUILD = '10.60';
+  var BUILD = '10.217';
 
   function ls(k, v) {
     try {
@@ -121527,7 +121554,7 @@ function hRenderMenu123() {
     '<button onclick="C123.hub.reset()">恢复默认</button></div>';
   /* 10.216：菜单栏最底部固定显示当前版本号，便于核对已装/已发布版本 */
   /* 用独立常量，避免 c129Bump/c130Bump 把 __CTB_BUILD__ 改回旧版本号 */
-  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.216') + ' · 智能错题本</div>';
+  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.217') + ' · 智能错题本</div>';
   /* 10.204：内容签名不变就不重写 innerHTML。旧实现每次调用都整块清空重画，
      而 c126Ensure(500ms) / c124BallSweep / c128DockKbFab 都会调到这里 ——
      菜单被清空的那一瞬间高度塌成 0，下一帧又画回来，肉眼就是「球框一直在闪」。 */
@@ -125779,11 +125806,11 @@ function c129FixDiag() {
  
 function c129Bump() {
   try {
-    W.__CTB_BUILD__ = '10.129';
-    W.__APP_BUILD__ = '10.129';
+    W.__CTB_BUILD__ = '10.217';
+    W.__APP_BUILD__ = '10.217';
     var tag = D.getElementById('ctbVerTag');
     if (tag && /10\.11\d|10\.12\d/.test(tag.textContent || '')) {
-      tag.textContent = 'v10.129';
+      tag.textContent = 'v10.216';
     }
   } catch (e) { }
 }
@@ -126840,7 +126867,7 @@ function c130Rebuild() {
   return true;
 }
 function c130Bump() {
-  try { W.__CTB_BUILD__ = C130.ver; } catch (e) { }
+  try { W.__CTB_BUILD__ = '10.217'; } catch (e) { }   /* 10.217: 全局构建版本统一，不再被模块内部版本覆盖 */
   try { if (W.C128) W.C128.version = C130.ver; } catch (e) { }
   try { if (W.C127) W.C127.version = C130.ver; } catch (e) { }
   try { if (W.C121) W.C121.version = C130.ver; } catch (e) { }
@@ -148941,6 +148968,8 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
    10.215 · 冷启动提速：公式清洗 lx/core 加缓存、知识点判定 fromKp 结果缓存、
             开机全树扫描改为分块 idle（每段<=4ms），消除启动期长任务掉帧；
    10.216 · 菜单栏底部固定显示版本号；AI 模型参数随 Supabase state 跨设备同步；发布版
+   10.217 · 云同步修复：LWW 保留 _u 时间戳（远端更新/删除真正生效）+ 照片双向恢复
+            + online/offline 联网即时补传；APK manifest 升级 versionCode 38 / versionName 10.217
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -149249,7 +149278,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       '<div class="stem" id="ctb210Stem"></div>' +
       '<div id="ctb210Opts"></div>' +
       '<div class="fb" id="ctb210Fb"></div>' +
-      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.216 · 防挂机</span></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.217 · 防挂机</span></div>' +
       '</div>';
     D.body.appendChild(m);
   }
