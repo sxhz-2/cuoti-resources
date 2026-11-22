@@ -68903,7 +68903,10 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       payload: {
         papers: slimArr(window.uploadedPapers || []),
         photos: slimArr(window.uploadedPhotos || []),
-        device: ls(K.dev), ts: Date.now()
+        device: ls(K.dev), ts: Date.now(),
+        /* 10.210：使用台账（最近 7 天 · 每天最多 80 条精简记录）挂在 state 上一并上传，
+           与错题同步共用同一次请求，不额外增加连接数与往返。 */
+        usage: (window.CTB210 && window.CTB210.export) ? window.CTB210.export(7) : null
       }
     };
     var p1 = rows.length ? syncWithTimeout(sp.from(T_ITEM).upsert(rows, { onConflict: 'user_id,item_id', ignoreDuplicates: false }), 25000) : Promise.resolve({ error: null });
@@ -68950,6 +68953,10 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
             if (st.payload.papers && st.payload.papers.length && (!window.uploadedPapers || !window.uploadedPapers.length)) {
               window.uploadedPapers = st.payload.papers; got += st.payload.papers.length;
               try { if (window.savePapers) window.savePapers(); } catch (e) { }
+            }
+            /* 10.210：合并云端使用台账 —— 只补本地缺的日期，绝不覆盖本地更完整的记录 */
+            if (st.payload.usage && window.CTB210 && window.CTB210.merge) {
+              got += window.CTB210.merge(st.payload.usage) || 0;
             }
           } catch (e) { }
         }
@@ -148779,6 +148786,480 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
     flush: flush
   };
 })();
+</script>
+
+
+
+<script id="ctb210Usage">
+/* ============================================================================
+   10.210 · 使用台账（精确到分）+ 防挂机验证 + 统计与同步
+   ----------------------------------------------------------------------------
+   ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
+      合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
+      避免高频点击时反复序列化整个 JSON。
+   ② 防挂机：连续 N 分钟（默认 8）没有任何真实操作就弹一道随机简单题（六科选择/判断），
+      答对才放行；答错立即换题；连错 3 次冷却 30 秒。媒体播放中不计空闲。
+   ③ 统计：今日活跃分钟、有效操作次数、验证通过/失败、科目分布。
+   ④ 同步：数据挂在主同步 state payload 的 usage 字段上，随错题一起上传与取回。
+   ========================================================================== */
+(function (W, D) {
+  'use strict';
+  if (W.__CTB210__) return;
+  W.__CTB210__ = 1;
+
+  var K_LOG = 'ctb_use_log_v1';
+  var K_STAT = 'ctb_use_stat_v1';
+  var K_CFG = 'ctb_use_cfg_v1';
+  var MAX_PER_DAY = 150, KEEP_DAYS = 14;
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function dk(d) { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function hm(d) { d = d || new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function getJSON(k, dv) { try { var s = localStorage.getItem(k); return s ? (JSON.parse(s) || dv) : dv; } catch (e) { return dv; } }
+  function setJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+
+  var cfg = getJSON(K_CFG, { idleMin: 8 });
+  if (!cfg.idleMin || cfg.idleMin < 3) cfg.idleMin = 8;
+
+  /* ---------- 内存缓存 ---------- */
+  var LC = null, SC = null, dirty = false;
+  function caches() {
+    if (!LC) { LC = getJSON(K_LOG, {}); SC = getJSON(K_STAT, {}); }
+    return true;
+  }
+  function flush() {
+    if (!dirty || !LC) return;
+    try { pruneLog(LC); setJSON(K_LOG, LC); setJSON(K_STAT, SC); dirty = false; } catch (e) { }
+  }
+  function pruneLog(all) {
+    var now = Date.now();
+    Object.keys(all).forEach(function (k) {
+      var t = Date.parse(k + 'T00:00:00');
+      if (!t || (now - t) > KEEP_DAYS * 86400000) delete all[k];
+    });
+    return all;
+  }
+
+  function log(subj, act, detail) {
+    try {
+      caches();
+      var key = dk(), arr = LC[key] || (LC[key] = []);
+      var t = hm(), s = subj || '其他', a = act || '操作';
+      var d = String(detail || '').replace(/\s+/g, ' ').slice(0, 40);
+      var last = arr[arr.length - 1];
+      if (last && last.t === t && last.s === s && last.a === a) {
+        last.n = (last.n || 1) + 1;
+        if (d) last.d = d;
+      } else {
+        arr.push({ t: t, s: s, a: a, d: d, n: 1 });
+        if (arr.length > MAX_PER_DAY) arr.splice(0, arr.length - MAX_PER_DAY);
+      }
+      var cur = SC[key] || (SC[key] = { ok: 0, fail: 0, ops: 0, first: Date.now(), last: 0 });
+      cur.ops = (cur.ops || 0) + 1; cur.last = Date.now(); if (!cur.first) cur.first = Date.now();
+      dirty = true;
+      scheduleFlush();
+    } catch (e) { }
+  }
+  var flushTimer = null;
+  function scheduleFlush() {
+    if (flushTimer) return;
+    flushTimer = setTimeout(function () { flushTimer = null; flush(); }, 800);
+  }
+  try { W.addEventListener('pagehide', flush); W.addEventListener('beforeunload', flush); } catch (e) { }
+  setInterval(flush, 5000);
+
+  /* ---------- 科目 / 动作识别 ---------- */
+  var SUBJ = ['语文', '数学', '英语', '物理', '化学', '生物'];
+  function currentSubject() {
+    try {
+      var mc = D.getElementById('mainContent');
+      var txt = String((mc ? mc.textContent : '') || '').slice(0, 6000);
+      /* 看板页六科都出现，词频会误判成某一科 —— 直接归到总览 */
+      if (/数据看板/.test(txt)) return '总览';
+      var best = '', bestN = 0;
+      SUBJ.forEach(function (s) {
+        var n = txt.split(s).length - 1;
+        if (n > bestN) { bestN = n; best = s; }
+      });
+      if (best && bestN >= 2) return best;
+      var act = D.querySelector('.nav-item.active, .menu-item.active, .tab.active');
+      var at = act ? String(act.textContent || '') : '';
+      for (var i = 0; i < SUBJ.length; i++) if (at.indexOf(SUBJ[i]) >= 0) return SUBJ[i];
+      var hd = D.querySelector('#mainContent h1, #mainContent h2, .page-title');
+      var ht = hd ? String(hd.textContent || '') : '';
+      for (var j = 0; j < SUBJ.length; j++) if (ht.indexOf(SUBJ[j]) >= 0) return SUBJ[j];
+    } catch (e) { }
+    return '总览';
+  }
+  function classify(txt) {
+    txt = String(txt || '').replace(/\s+/g, '');
+    if (!txt) return '';
+    if (/看解析|详细解析|解析/.test(txt)) return '看解析';
+    if (/讲这|讲解|直讲|九维|板书/.test(txt)) return '看讲解';
+    if (/朗读|播报|听写|听力/.test(txt)) return '朗读听力';
+    if (/判卷|测评|判分|批改/.test(txt)) return '判卷测评';
+    if (/资料库|真题|课本|知识点分册|题库/.test(txt)) return '查资料';
+    if (/作战|复习 ?650|提分三件套|遗忘曲线/.test(txt)) return '学习计划';
+    if (/复习|待复习|已掌握|巩固/.test(txt)) return '复习错题';
+    if (/拍照|上传|新增错题|录入/.test(txt)) return '录入错题';
+    if (/搜索|查询/.test(txt)) return '检索';
+    if (/诊断|审核|追根|探针/.test(txt)) return '诊断追根';
+    if (/同步|备份|导出/.test(txt)) return '同步导出';
+    return '';
+  }
+  function briefOf(el) {
+    var t = el;
+    for (var i = 0; i < 4 && t; i++) {
+      var s = String((t.getAttribute && (t.getAttribute('title') || t.getAttribute('aria-label'))) || '').trim();
+      if (s.length >= 4) return s;
+      t = t.parentNode;
+    }
+    var card = (el && el.closest) ? el.closest('.wrong-card, .paper-card, .kb-card, .item, .card') : null;
+    if (card) {
+      var h = card.querySelector('h3,h4,.title,.stem,.q-stem,.nm');
+      if (h) return String(h.textContent || '').replace(/\s+/g, ' ').slice(0, 40);
+    }
+    return String((el && el.textContent) || '').replace(/\s+/g, ' ').slice(0, 24);
+  }
+
+  /* ---------- 题库：六科 · 选择 + 判断（简单、答案唯一） ---------- */
+  var Q = [
+    ['语文', '「春风又绿江南岸」的作者是？', ['苏轼', '王安石', '陆游', '辛弃疾'], 1],
+    ['语文', '「三人行，必有我师焉」出自？', ['《孟子》', '《论语》', '《大学》', '《中庸》'], 1],
+    ['语文', '「不入虎穴，焉得虎子」出自？', ['《史记》', '《后汉书》', '《三国志》', '《汉书》'], 1],
+    ['语文', '下列词语没有错别字的是？', ['一如既往', '迫不急待', '按步就班', '变本加利'], 0],
+    ['语文', '「沉舟侧畔千帆过」的下一句是？', ['病树前头万木春', '柳暗花明又一村', '长风破浪会有时', '直挂云帆济沧海'], 0],
+    ['语文', '下列句子没有语病的是？', ['通过这次活动，使我明白了道理', '他的写作水平明显改进了', '我们要养成认真读书的习惯', '能否学好语文，关键在于努力'], 2],
+    ['语文', '判断：「再接再厉」中的「厉」表示「严格」。', ['正确', '错误'], 1],
+    ['语文', '判断：《红楼梦》的作者是曹雪芹。', ['正确', '错误'], 0],
+
+    ['数学', '3/4 + 1/4 = ？', ['1', '4/8', '1/2', '3/8'], 0],
+    ['数学', '若 x + 5 = 12，则 x = ？', ['5', '6', '7', '17'], 2],
+    ['数学', '三角形的内角和是？', ['90°', '180°', '270°', '360°'], 1],
+    ['数学', '2 的 5 次方等于？', ['10', '16', '25', '32'], 3],
+    ['数学', '圆的面积公式是？', ['πr', '2πr', 'πr²', '2πr²'], 2],
+    ['数学', '方程 x² - 5x + 6 = 0 的两根是？', ['1 和 6', '2 和 3', '-2 和 -3', '1 和 5'], 1],
+    ['数学', '判断：所有偶数都是合数。', ['正确', '错误'], 1],
+    ['数学', '判断：在实数范围内，负数没有平方根。', ['正确', '错误'], 0],
+
+    ['英语', 'She ___ to school every day.', ['go', 'goes', 'going', 'gone'], 1],
+    ['英语', 'book 的复数形式是？', ['book', 'books', 'bookes', 'bookies'], 1],
+    ['英语', 'I ___ my homework yesterday.', ['do', 'did', 'done', 'doing'], 1],
+    ['英语', 'He is good ___ math.', ['in', 'at', 'on', 'for'], 1],
+    ['英语', 'big 的比较级是？', ['biger', 'bigger', 'more big', 'biggest'], 1],
+    ['英语', 'There ___ some milk in the glass.', ['is', 'are', 'be', 'been'], 0],
+    ['英语', '判断：go 的过去式是 goed。', ['正确', '错误'], 1],
+    ['英语', '判断：一般现在时中，第三人称单数动词要加 -s 或 -es。', ['正确', '错误'], 0],
+
+    ['物理', '国际单位制中，力的单位是？', ['焦耳', '牛顿', '瓦特', '帕斯卡'], 1],
+    ['物理', '光在真空中的速度约为？', ['3×10⁵ m/s', '3×10⁸ m/s', '3×10⁶ m/s', '3×10⁷ m/s'], 1],
+    ['物理', '物体做匀速直线运动时，加速度为？', ['0', '恒定正值', '不断增大', '不断减小'], 0],
+    ['物理', '质量 1 kg 的物体所受重力约为（g 取 10）？', ['1 N', '10 N', '100 N', '0.1 N'], 1],
+    ['物理', '电流的单位是？', ['伏特', '欧姆', '安培', '瓦特'], 2],
+    ['物理', '下列物理量中属于矢量的是？', ['质量', '时间', '速度', '温度'], 2],
+    ['物理', '判断：质量是物体惯性大小的量度。', ['正确', '错误'], 0],
+    ['物理', '判断：声音可以在真空中传播。', ['正确', '错误'], 1],
+
+    ['化学', '水的化学式是？', ['CO₂', 'H₂O', 'O₂', 'H₂O₂'], 1],
+    ['化学', '空气中含量最多的气体是？', ['氧气', '氮气', '二氧化碳', '稀有气体'], 1],
+    ['化学', '下列属于金属元素的是？', ['氧', '碳', '铁', '硫'], 2],
+    ['化学', 'pH 小于 7 的溶液呈？', ['酸性', '碱性', '中性', '无法判断'], 0],
+    ['化学', '金刚石和石墨都由什么元素组成？', ['硅', '碳', '钙', '铁'], 1],
+    ['化学', '下列物质属于混合物的是？', ['蒸馏水', '空气', '二氧化碳', '氯化钠'], 1],
+    ['化学', '判断：氧气本身可以燃烧。', ['正确', '错误'], 1],
+    ['化学', '判断：水由氢元素和氧元素组成。', ['正确', '错误'], 0],
+
+    ['生物', '细胞中控制物质进出的结构是？', ['细胞壁', '细胞膜', '细胞核', '液泡'], 1],
+    ['生物', '人体最大的消化腺是？', ['胃', '肝脏', '胰腺', '肠腺'], 1],
+    ['生物', '光合作用的场所是？', ['线粒体', '叶绿体', '细胞核', '核糖体'], 1],
+    ['生物', '血液中运输氧气的是？', ['白细胞', '血小板', '红细胞', '淋巴细胞'], 2],
+    ['生物', '遗传物质 DNA 主要存在于？', ['细胞膜', '细胞质', '细胞核', '细胞壁'], 2],
+    ['生物', '下列属于分解者的是？', ['绿色植物', '牛', '蘑菇', '鹰'], 2],
+    ['生物', '判断：病毒没有细胞结构。', ['正确', '错误'], 0],
+    ['生物', '判断：植物只有光合作用，没有呼吸作用。', ['正确', '错误'], 1]
+  ];
+
+  /* ---------- 空闲计时 ---------- */
+  var lastActive = Date.now(), verifying = false, CD_UNTIL = 0;
+  function mediaPlaying() {
+    try {
+      var m = D.querySelectorAll('video,audio');
+      for (var i = 0; i < m.length; i++) {
+        var v = m[i];
+        if (v && !v.paused && !v.ended && v.currentTime > 0) return true;
+      }
+      if (W.speechSynthesis && W.speechSynthesis.speaking) return true;
+    } catch (e) { }
+    return false;
+  }
+
+  /* ---------- 验证弹窗 ---------- */
+  var CSS210 = [
+    '#ctb210Mask{position:fixed;inset:0;background:rgba(15,23,42,.74);z-index:300200;display:none;align-items:center;justify-content:center;padding:16px;}',
+    '#ctb210Mask.on{display:flex;}',
+    '#ctb210Box{background:#fff;border-radius:16px;width:100%;max-width:430px;max-height:88vh;overflow:auto;padding:16px 16px 14px;box-shadow:0 18px 50px rgba(0,0,0,.35);}',
+    '#ctb210Box .h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}',
+    '#ctb210Box .h b{font-size:15px;color:#0f172a;}',
+    '#ctb210Box .tag{font-size:11px;color:#fff;background:#0e7a66;border-radius:9px;padding:2px 8px;white-space:nowrap;}',
+    '#ctb210Box .tip{font-size:12px;color:#64748b;line-height:1.6;margin-bottom:8px;}',
+    '#ctb210Box .stem{font-size:14.5px;font-weight:600;color:#0f172a;line-height:1.65;margin:6px 0 12px;}',
+    '#ctb210Box .opt{display:block;width:100%;text-align:left;border:1px solid #d9e2ec;background:#fff;border-radius:10px;padding:10px 12px;font-size:14px;color:#1e293b;margin:0 0 8px;cursor:pointer;}',
+    '#ctb210Box .opt:active{background:#eef6f2;}',
+    '#ctb210Box .opt.ok{border-color:#0e7a66;background:#e8f8f3;color:#0b5c4e;font-weight:700;}',
+    '#ctb210Box .opt.bad{border-color:#c0392b;background:#fdecea;color:#a5281b;}',
+    '#ctb210Box .fb{font-size:12.5px;line-height:1.6;min-height:20px;margin-top:2px;}',
+    '#ctb210Box .foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11px;color:#94a3b8;}',
+    '#ctb210Card{background:#fff;border:1px solid #e3e9ef;border-radius:12px;padding:11px 13px;margin:12px 0 0;}',
+    '#ctb210Card summary{cursor:pointer;font-size:13px;font-weight:700;color:#0f172a;line-height:1.6;}',
+    '#ctb210Card .row{display:flex;gap:6px;font-size:12.5px;line-height:1.7;padding:2px 0;border-bottom:1px dashed #f0f4f7;align-items:baseline;}',
+    '#ctb210Card .tm{flex:0 0 42px;color:#0e7a66;font-weight:600;font-variant-numeric:tabular-nums;}',
+    '#ctb210Card .sj{flex:0 0 38px;color:#334155;font-weight:600;}',
+    '#ctb210Card .ac{flex:0 0 58px;color:#2563eb;}',
+    '#ctb210Card .dt{flex:1;min-width:0;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '#ctb210Card .sum{font-size:12px;color:#475569;line-height:1.8;margin-top:8px;}'
+  ].join('');
+
+  function ensureCss() {
+    if (D.getElementById('ctb210Css')) return;
+    var s = D.createElement('style'); s.id = 'ctb210Css'; s.textContent = CSS210;
+    (D.head || D.documentElement).appendChild(s);
+  }
+  function ensureMask() {
+    if (D.getElementById('ctb210Mask')) return;
+    ensureCss();
+    var m = D.createElement('div'); m.id = 'ctb210Mask';
+    m.innerHTML = '<div id="ctb210Box">' +
+      '<div class="h"><b>⏰ 还在这里吗</b><span class="tag" id="ctb210Subj">语文</span></div>' +
+      '<div class="tip">好一阵没有操作了，答对下面这道小题就能继续使用（答错会换一道）。</div>' +
+      '<div class="stem" id="ctb210Stem"></div>' +
+      '<div id="ctb210Opts"></div>' +
+      '<div class="fb" id="ctb210Fb"></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.210 · 防挂机</span></div>' +
+      '</div>';
+    D.body.appendChild(m);
+  }
+
+  var curQ = null, wrongRun = 0, asked = 0, lastPick = {};
+  function pickQ() {
+    var i = Math.floor(Math.random() * Q.length);
+    if (Q.length > 1 && lastPick.i === i) i = (i + 1) % Q.length;
+    lastPick.i = i;
+    var q = Q[i];
+    return { subj: q[0], stem: q[1], opts: q[2], ans: q[3] };
+  }
+  function renderQ() {
+    curQ = pickQ();
+    asked++;
+    D.getElementById('ctb210Subj').textContent = curQ.subj;
+    D.getElementById('ctb210Stem').textContent = curQ.stem;
+    D.getElementById('ctb210Fb').textContent = '';
+    D.getElementById('ctb210Cnt').textContent = '第 ' + asked + ' 题' + (wrongRun ? ' · 已错 ' + wrongRun + ' 次' : '');
+    var box = D.getElementById('ctb210Opts');
+    box.innerHTML = '';
+    var letters = ['A', 'B', 'C', 'D'];
+    curQ.opts.forEach(function (o, i) {
+      var b = D.createElement('button');
+      b.type = 'button'; b.className = 'opt';
+      b.textContent = letters[i] + '. ' + o;
+      b.onclick = function () { answer(i, b); };
+      box.appendChild(b);
+    });
+  }
+  function statTick(ok) {
+    try {
+      caches();
+      var k = dk();
+      var cur = SC[k] || (SC[k] = { ok: 0, fail: 0, ops: 0, first: Date.now(), last: 0 });
+      if (ok) cur.ok = (cur.ok || 0) + 1; else cur.fail = (cur.fail || 0) + 1;
+      cur.last = Date.now(); dirty = true; scheduleFlush();
+    } catch (e) { }
+  }
+  function answer(i, btn) {
+    if (!curQ) return;
+    if (Date.now() < CD_UNTIL) return;
+    if (i === curQ.ans) {
+      btn.className = 'opt ok';
+      D.getElementById('ctb210Fb').innerHTML = '<span style="color:#0b5c4e;font-weight:700;">✅ 答对了，继续使用。</span>';
+      statTick(true); log(curQ.subj, '验证通过', curQ.stem);
+      wrongRun = 0;
+      setTimeout(closeVerify, 900);
+    } else {
+      btn.className = 'opt bad';
+      wrongRun++;
+      statTick(false); log(curQ.subj, '验证答错', curQ.stem);
+      if (wrongRun >= 3) {
+        CD_UNTIL = Date.now() + 30000;
+        var tick = setInterval(function () {
+          var left = Math.ceil((CD_UNTIL - Date.now()) / 1000);
+          var fb = D.getElementById('ctb210Fb');
+          if (left <= 0) {
+            clearInterval(tick); CD_UNTIL = 0; wrongRun = 0; asked = 0; renderQ(); return;
+          }
+          if (fb) fb.innerHTML = '<span style="color:#a5281b;font-weight:700;">连续答错 3 次，请 ' + left + ' 秒后再试。</span>';
+        }, 500);
+        var fb0 = D.getElementById('ctb210Fb');
+        if (fb0) fb0.innerHTML = '<span style="color:#a5281b;font-weight:700;">连续答错 3 次，请 30 秒后再试。</span>';
+      } else {
+        D.getElementById('ctb210Fb').innerHTML = '<span style="color:#a5281b;font-weight:700;">❌ 不对，换一道再试试。</span>';
+        setTimeout(renderQ, 700);
+      }
+    }
+  }
+  function openVerify() {
+    if (verifying) return;
+    if (Date.now() < CD_UNTIL) return;
+    verifying = true; asked = 0; wrongRun = 0;
+    ensureMask();
+    D.getElementById('ctb210Mask').classList.add('on');
+    renderQ();
+    log('综合', '触发验证', '空闲 ' + cfg.idleMin + ' 分钟');
+  }
+  function closeVerify() {
+    verifying = false;
+    var m = D.getElementById('ctb210Mask');
+    if (m) m.classList.remove('on');
+    lastActive = Date.now();
+  }
+
+  /* ---------- 明细卡片 ---------- */
+  function esc210(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function todayRows() {
+    caches();
+    return (LC[dk()] || []).slice().reverse();
+  }
+  function todayStat() {
+    caches();
+    return SC[dk()] || { ok: 0, fail: 0, ops: 0, first: 0, last: 0 };
+  }
+  function cardHtml() {
+    var rows = todayRows(), st = todayStat();
+    var span = (st.first && st.last && st.last > st.first) ? Math.round((st.last - st.first) / 60000) : 0;
+    var bySubj = {};
+    rows.forEach(function (r) { bySubj[r.s] = (bySubj[r.s] || 0) + (r.n || 1); });
+    var dist = Object.keys(bySubj).sort(function (a, b) { return bySubj[b] - bySubj[a]; })
+      .map(function (k) { return k + ' ' + bySubj[k]; }).join(' · ');
+
+    var h = '<details id="ctb210Det"><summary>📋 使用明细 · 今天 ' + rows.length + ' 条' +
+      (rows.length ? '（精确到分）' : ' · 暂无记录') + '</summary>';
+    if (!rows.length) {
+      h += '<div class="sum">今天还没记录到操作。点开一道题或一个功能，这里就开始记时记事。</div>';
+    } else {
+      h += '<div style="margin-top:8px;">';
+      rows.slice(0, 40).forEach(function (r) {
+        h += '<div class="row"><span class="tm">' + esc210(r.t) + '</span><span class="sj">' + esc210(r.s) + '</span>' +
+          '<span class="ac">' + esc210(r.a) + '</span><span class="dt">' + esc210(r.d || '') +
+          ((r.n || 1) > 1 ? ' ×' + r.n : '') + '</span></div>';
+      });
+      h += '</div>';
+      if (rows.length > 40) h += '<div class="sum">只显示最近 40 条，完整 ' + rows.length + ' 条存在本机。</div>';
+    }
+    h += '<div class="sum">今日活跃 <b>' + (span >= 60 ? (Math.floor(span / 60) + ' 小时 ' + (span % 60) + ' 分') : (span + ' 分')) +
+      '</b> · 有效操作 <b>' + (st.ops || 0) + '</b> 次 · 验证通过 <b>' + (st.ok || 0) + '</b> / 失败 <b>' + (st.fail || 0) + '</b>' +
+      (dist ? '<br>科目分布：' + esc210(dist) : '') + '</div>';
+    h += '</details>';
+    return h;
+  }
+  function mountCard() {
+    try {
+      var mc = D.getElementById('mainContent');
+      if (!mc) return;
+      if ((mc.textContent || '').indexOf('数据看板') < 0) return;
+      var host = D.getElementById('dashSumCard') || mc;
+      var card = D.getElementById('ctb210Card');
+      if (!card) {
+        ensureCss();
+        card = D.createElement('div');
+        card.id = 'ctb210Card';
+        host.appendChild(card);
+      } else if (card.parentNode !== host) {
+        host.appendChild(card);
+      }
+      var rows = todayRows(), st = todayStat();
+      var sig = rows.length + '|' + (rows[0] ? rows[0].t + rows[0].a + rows[0].n : '') + '|' +
+        st.ops + '|' + st.ok + '|' + st.fail + '|' + st.last;
+      if (card.__sig === sig) return;
+      var open = false;
+      var d0 = card.querySelector('#ctb210Det');
+      if (d0 && d0.open) open = true;
+      card.innerHTML = cardHtml();
+      if (open) { var d1 = card.querySelector('#ctb210Det'); if (d1) d1.open = true; }
+      card.__sig = sig;
+    } catch (e) { }
+  }
+
+  /* ---------- 事件 ---------- */
+  ['click', 'keydown', 'touchstart', 'scroll', 'input'].forEach(function (ev) {
+    try { D.addEventListener(ev, function () { lastActive = Date.now(); }, { passive: true, capture: true }); } catch (e) { }
+  });
+  try {
+    D.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('#ctb210Mask,#c123Menu,#c123Side,#c123Hub,#ctb210Card')) return;
+      var b = t.closest('button,a,.btn,.nav-item,.menu-item,.tab,[onclick]');
+      var txt = b ? String(b.getAttribute('title') || b.textContent || '') : '';
+      var act = classify(txt);
+      if (!act) {
+        if (t.closest('.wrong-card,.paper-card,.kb-card,.item,.card')) act = '浏览内容';
+        else if (b && b.matches && b.matches('.nav-item,.menu-item,.tab')) act = '切换页面';
+      }
+      if (!act) return;
+      log(currentSubject(), act, briefOf(b || t));
+    }, true);
+  } catch (e) { }
+
+  setInterval(function () {
+    if (D.hidden) return;
+    mountCard();
+    if (verifying) return;
+    if (Date.now() < CD_UNTIL) return;
+    if (mediaPlaying()) { lastActive = Date.now(); return; }
+    if (Date.now() - lastActive > cfg.idleMin * 60000) openVerify();
+  }, 15000);
+
+  /* ---------- 对外 ---------- */
+  W.CTB210 = {
+    version: '10.210',
+    log: log,
+    rows: function (day) { caches(); return LC[day || dk()] || []; },
+    stats: function (day) { caches(); return SC[day || dk()] || null; },
+    openVerify: openVerify,
+    closeVerify: closeVerify,
+    setCfg: function (o) { cfg = Object.assign(cfg, o || {}); setJSON(K_CFG, cfg); return cfg; },
+    getCfg: function () { return cfg; },
+    flush: flush,
+    export: function (days) {
+      flush(); caches();
+      days = days || 7;
+      var keep = {}, keepSt = {};
+      Object.keys(LC).sort().slice(-days).forEach(function (k) {
+        keep[k] = (LC[k] || []).slice(-80).map(function (r) { return [r.t, r.s, r.a, (r.d || '').slice(0, 24), r.n || 1]; });
+        if (SC[k]) keepSt[k] = SC[k];
+      });
+      return { log: keep, stat: keepSt, cfg: { idleMin: cfg.idleMin }, v: 1 };
+    },
+    merge: function (cloud) {
+      if (!cloud || typeof cloud !== 'object') return 0;
+      caches();
+      var added = 0;
+      Object.keys(cloud.log || {}).forEach(function (k) {
+        if (LC[k] && LC[k].length) return;
+        var arr = (cloud.log[k] || []).map(function (r) {
+          return Array.isArray(r) ? { t: r[0], s: r[1], a: r[2], d: r[3] || '', n: r[4] || 1 } : r;
+        });
+        if (arr.length) { LC[k] = arr; added += arr.length; }
+        if (cloud.stat && cloud.stat[k] && !SC[k]) SC[k] = cloud.stat[k];
+      });
+      if (added) { pruneLog(LC); setJSON(K_LOG, LC); setJSON(K_STAT, SC); }
+      return added;
+    }
+  };
+
+  try { console.info('[ctb210] 使用台账已启用，空闲 ' + cfg.idleMin + ' 分钟触发验证'); } catch (e) { }
+})(window, document);
+
 </script>
 
 </html>
