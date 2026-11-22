@@ -144839,6 +144839,12 @@ return out;
     b.setAttribute('aria-label', '随时问 AI（任意科目 / 任意页面 · 支持语音输入）');
     b.textContent = '🤖';
     (D.body || D.documentElement).appendChild(b);
+    /* 10.211：建球即收纳，不留给扫描器 0.3~10 秒的可见窗口。
+       判据用总球框自己的 out 状态：出现过「拖出」才显示，否则一律收纳。 */
+    try {
+      var outNow = !!(W.H123 && W.H123.state && W.H123.state.out && W.H123.state.out[b.id]);
+      if (!outNow) b.classList.add('c123-hidden');
+    } catch (e0) { }
     b.addEventListener('click', function (e) {
       try { e.preventDefault(); e.stopPropagation(); } catch (x) { }
       togglePanel();
@@ -144954,6 +144960,12 @@ return out;
           + 'color:#fff;font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;'
           + 'cursor:pointer;box-shadow:0 6px 20px rgba(60,40,140,.4);user-select:none;touch-action:manipulation;}',
         '#ctb179AskFab:active{transform:scale(.94);}',
+        /* 10.211：收纳态硬兜底。10.209 依赖 [data-c123key].c123-hidden 全局规则，
+           但 c124BallSweep 先加 class、C123 后补 data-c123key，中间这段窗口里
+           选择器不命中 → 球照旧可见（实测 t=12s 时 cls=c123-hidden 而 display=flex）。
+           这里补一条不依赖 data-c123key 的规则，任何时刻带上 c123-hidden 即真正消失。 */
+        'html body #ctb179AskFab.c123-hidden{display:none!important;visibility:hidden!important;'
+          + 'opacity:0!important;pointer-events:none!important;}',
         /* 面板：带 data-c123ui，不会被总球框误收纳 */
         '#ctb179Panel{position:fixed;z-index:100345;right:10px;bottom:10px;width:min(410px,94vw);'
           + 'height:min(62vh,540px);display:none;flex-direction:column;box-sizing:border-box;'
@@ -145087,6 +145099,18 @@ return out;
   /* ---------- ⑨ 启动 ---------- */
   loadHist();
   buildBall();
+  /* 10.211：三段自愈。任何原因导致「球在页面上但状态是收纳」——扫描器没覆盖到、
+     class 被别的模块摘掉、DOM 重建——开机末期强制补回收纳态。只在前 10 秒内执行，
+     不会干扰用户之后主动点「拖出」。 */
+  [1200, 4000, 9000].forEach(function (ms) {
+    setTimeout(function () {
+      try {
+        var b = q('ctb179AskFab'); if (!b) return;
+        var o = !!(W.H123 && W.H123.state && W.H123.state.out && W.H123.state.out[b.id]);
+        if (!o && !b.classList.contains('c123-hidden')) b.classList.add('c123-hidden');
+      } catch (e0) { }
+    }, ms);
+  });
   buildPanel();     /* 默认 display:none，打开才显示 */
   mountHub();
   /* 页面切换时刷新上下文条，不重建面板、不打断多轮对话 */
@@ -148793,6 +148817,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 <script id="ctb210Usage">
 /* ============================================================================
    10.210 · 使用台账（精确到分）+ 防挂机验证 + 统计与同步
+   10.211 · 科目改按字段精确取（四级取数，去掉词频统计）+ AI 球建球即收纳
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -148870,24 +148895,91 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 
   /* ---------- 科目 / 动作识别 ---------- */
   var SUBJ = ['语文', '数学', '英语', '物理', '化学', '生物'];
-  function currentSubject() {
+  /* ---------- 科目精确取：按数据字段，不做词频统计 ----------
+     旧实现把 mainContent 前 6000 字的六个科目名做词频比较，取出现最多的那个。
+     页面上同时出现六科的场景（看板、按科目统计、跨科练习）必然误判。现改为四级字段取数：
+     ① 点击目标自身即科目控件（如「数学 12 道」）→ 直接取该控件里的科目；
+     ② 页面正文反查题干 → 命中 uploadedPhotos / uploadedPapers 里该题自带的 subject 字段；
+     ③ 当前视图结构化标题（激活的导航 / 页标题 / 面包屑）里的科目；
+     ④ 本次会话内最近一次确定的科目上下文（15 分钟内有效）。
+     四级全部落空才归「总览」，不再猜。 */
+  var SUBJ6 = { '语文': 1, '数学': 1, '英语': 1, '物理': 1, '化学': 1, '生物': 1 };
+  var ctxS = { subj: '', at: 0 };
+  var idxS = { map: null, at: 0, n: 0 };
+
+  function nz210(s) { return String(s == null ? '' : s).replace(/[\s\u3000]+/g, ''); }
+
+  function idxBuild210() {
+    var now = Date.now();
+    if (idxS.map && now - idxS.at < 20000) return idxS;
+    var map = {}, n = 0;
+    function eat(arr, limit, depth) {
+      if (!arr || !arr.length || depth > 2) return;
+      var L = Math.min(arr.length, limit);
+      for (var i = 0; i < L; i++) {
+        var it = arr[i]; if (!it || typeof it !== 'object') continue;
+        var sj = it.subject || it.subj || (it.meta && it.meta.subject) || '';
+        if (SUBJ6[sj]) {
+          var cand = [it.stem, it.q, it.question, it.text, it.title, it.name];
+          for (var c = 0; c < cand.length; c++) {
+            var st = nz210(cand[c]);
+            if (st.length >= 8) { var k = st.slice(0, 18); if (!map[k]) { map[k] = sj; n++; } break; }
+          }
+        }
+        if (it.qs && it.qs.length) eat(it.qs, 40, depth + 1);
+      }
+    }
+    try { eat(W.uploadedPhotos, 500, 0); } catch (e1) { }
+    try { eat(W.uploadedPapers, 200, 0); } catch (e2) { }
+    idxS.map = map; idxS.at = now; idxS.n = n;
+    return idxS;
+  }
+
+  function subjByData210() {
+    var box = D.getElementById('mainContent') || D.body;
+    if (!box) return '';
+    var txt = nz210(String(box.textContent || '').slice(0, 14000));
+    if (txt.length < 8) return '';
+    var map = idxBuild210().map, best = '', bestLen = 0;
+    for (var k in map) {
+      if (k.length > bestLen && txt.indexOf(k) >= 0) { best = map[k]; bestLen = k.length; }
+    }
+    return best;
+  }
+
+  function subjByTap210(el) {
+    for (var i = 0, p = el; i < 4 && p; i++, p = p.parentNode) {
+      var s = nz210(p.textContent || '');
+      if (!s || s.length > 24) continue;
+      for (var k in SUBJ6) {
+        if (s.indexOf(k) >= 0) { ctxS.subj = k; ctxS.at = Date.now(); return k; }
+      }
+    }
+    return '';
+  }
+
+  function subjByView210() {
+    var sel = ['.nav-item.active', '.menu-item.active', '.tab.active',
+               '#mainContent .page-title', '.page-title', '.breadcrumb', '.crumb'];
+    for (var i = 0; i < sel.length; i++) {
+      var e = null; try { e = D.querySelector(sel[i]); } catch (er) { }
+      if (!e) continue;
+      var s = nz210(e.textContent || '');
+      if (!s || s.length > 30) continue;
+      for (var k in SUBJ6) if (s.indexOf(k) >= 0) return k;
+    }
+    return '';
+  }
+
+  function subjectFor210(el) {
     try {
-      var mc = D.getElementById('mainContent');
-      var txt = String((mc ? mc.textContent : '') || '').slice(0, 6000);
-      /* 看板页六科都出现，词频会误判成某一科 —— 直接归到总览 */
-      if (/数据看板/.test(txt)) return '总览';
-      var best = '', bestN = 0;
-      SUBJ.forEach(function (s) {
-        var n = txt.split(s).length - 1;
-        if (n > bestN) { bestN = n; best = s; }
-      });
-      if (best && bestN >= 2) return best;
-      var act = D.querySelector('.nav-item.active, .menu-item.active, .tab.active');
-      var at = act ? String(act.textContent || '') : '';
-      for (var i = 0; i < SUBJ.length; i++) if (at.indexOf(SUBJ[i]) >= 0) return SUBJ[i];
-      var hd = D.querySelector('#mainContent h1, #mainContent h2, .page-title');
-      var ht = hd ? String(hd.textContent || '') : '';
-      for (var j = 0; j < SUBJ.length; j++) if (ht.indexOf(SUBJ[j]) >= 0) return SUBJ[j];
+      var t = subjByTap210(el);
+      if (t) return t;
+      var d = subjByData210();
+      if (d) { ctxS.subj = d; ctxS.at = Date.now(); return d; }
+      var v = subjByView210();
+      if (v) { ctxS.subj = v; ctxS.at = Date.now(); return v; }
+      if (ctxS.subj && Date.now() - ctxS.at < 15 * 60000) return ctxS.subj;
     } catch (e) { }
     return '总览';
   }
@@ -149034,7 +149126,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       '<div class="stem" id="ctb210Stem"></div>' +
       '<div id="ctb210Opts"></div>' +
       '<div class="fb" id="ctb210Fb"></div>' +
-      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.210 · 防挂机</span></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.211 · 防挂机</span></div>' +
       '</div>';
     D.body.appendChild(m);
   }
@@ -149204,9 +149296,12 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       if (!act) {
         if (t.closest('.wrong-card,.paper-card,.kb-card,.item,.card')) act = '浏览内容';
         else if (b && b.matches && b.matches('.nav-item,.menu-item,.tab')) act = '切换页面';
+        else if (subjByTap210(b || t)) act = '查看科目';   /* 10.211：点科目统计卡此前不计账 */
       }
       if (!act) return;
-      log(currentSubject(), act, briefOf(b || t));
+      var sbj211 = subjectFor210(b || t);
+      var brf211 = act === '查看科目' ? ('进入「' + sbj211 + '」科目视图') : briefOf(b || t);
+      log(sbj211, act, brf211);
     }, true);
   } catch (e) { }
 
@@ -149221,8 +149316,11 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 
   /* ---------- 对外 ---------- */
   W.CTB210 = {
-    version: '10.210',
+    version: '10.211',
     log: log,
+    /* 调试出口：外部可直接查「这一次点击会被记成哪一科」，不必依赖点击真实控件 */
+    subjectFor: subjectFor210,
+    subjectIdxN: function () { return idxBuild210().n; },
     rows: function (day) { caches(); return LC[day || dk()] || []; },
     stats: function (day) { caches(); return SC[day || dk()] || null; },
     openVerify: openVerify,
