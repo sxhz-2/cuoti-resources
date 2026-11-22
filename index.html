@@ -121392,7 +121392,19 @@ function hRenderMenu123() {
     '<small>三层记忆 · L1/L2/L3 · Anki/ics/json 导出</small></span>' +
     '<button onclick="C123.hub.openMem()">打开</button></div>';
   if (!H123.order.length) h += '<div class="c123-mnote">暂未扫到悬浮球，点下方「重新扫描」。</div>';
-  H123.order.forEach(function (k) {
+  /* 10.209：按名称字长由短到长排列（同长保持原扫描顺序）。原来按扫描到的先后排列，
+     长短交错，右侧按钮列虽然对齐但左侧文字形成锯齿；排序后呈阶梯状，整框更整齐。
+     只对渲染用的副本排序，H123.order 自身的顺序与拖出/收纳状态一律不动，
+     所以持久化数据、badge 计数、外部按 key 调用都不受影响。 */
+  var __ord209 = H123.order.slice();
+  try {
+    __ord209.sort(function (a, b) {
+      var A = H123.items[a], B = H123.items[b];
+      var la = A ? String(A.label || '').length : 0, lb = B ? String(B.label || '').length : 0;
+      return la - lb;
+    });
+  } catch (e) { __ord209 = H123.order.slice(); }
+  __ord209.forEach(function (k) {
     var it = H123.items[k]; if (!it) return;
     var out = it.state === 'out';
     h += '<div class="c123-mrow"><span class="ic">' + it.ic + '</span><span class="nm">' + esc(it.label) +
@@ -121623,6 +121635,16 @@ if (W.C122) {
  
 hCss123();
 hStateLoad123();
+/* 10.209：「随时问 AI」球（#ctb179AskFab，菜单里的「AI 随时问」）默认收纳。
+   在「加载状态之后、构建与扫描之前」清掉它的 out 记录 —— 于是随后无论 C123 还是
+   c124BallSweep 扫描到它，都按「已收纳」处理，开机不会出现在页面上。
+   这个位置避免了「先加隐藏、又被旧状态放出」的时序竞态，也不会弹 toast。
+   用户本次会话里点「拖出」照常生效，只是下次开机重新回到收纳态。 */
+try {
+  if (H123.state && H123.state.out && H123.state.out.ctb179AskFab) {
+    delete H123.state.out.ctb179AskFab; hSave123();
+  }
+} catch (e) { }
 hBuild123();
 hScan123(false);
 [350, 1100, 2600, 5200, 9000].forEach(function (ms) {
@@ -121632,6 +121654,16 @@ hScan123(false);
   }, ms);
 });
 try { W.addEventListener('resize', function () { hPlace123(); }); } catch (e) { }
+
+/* ===== 10.209 · 「随时问 AI」球默认收纳 =========================================
+   那个位于屏幕右下（52×52 · 机器人图标 · z-index 100325）的球就是 #ctb179AskFab，
+   也就是菜单里的「AI 随时问」——同一个节点。它不是多余的功能：点开是
+   「任意页面随时问 AI」面板（含语音输入），与球框菜单那一行完全等价。
+   以前只要点过一次「拖出」，state.out 就写进 localStorage，之后每次开机都停在
+   页面上挡住「高考真题题库」按钮，看起来像多出来一个没用的球。
+   处理点见下方 hStateLoad123() 之后的清理：开机即清掉它的 out 记录，永久回到收纳态。
+   ========================================================================== */
+
 
 
 
@@ -122200,21 +122232,40 @@ function c124BallSweep() {
 }
 function c124ExtraMenu() {
   var m = D.getElementById('c123Menu'); if (!m) return;
+  /* 10.209：先剔除「已被 C123 主列表收录」的球（判据：el 上已有 data-c123key）。
+     c124BallSweep 与 hScan123 是两套独立扫描器，同一颗球会被各登记一次，
+     于是菜单上半部分列一遍、下半「补收的悬浮球」又列一遍 —— 12 行里 6 行是重复的，
+     这是框内看起来最不整齐的来源。数据不动，只做显示去重：C123 那条仍可「打开 / 拖出」，
+     球本体依旧由 c124 保持收纳，功能零损失。 */
+  var __show = N124.extraOrder.filter(function (k) {
+    var q = N124.extra[k]; if (!q) return false;
+    var e = q.el; if (!e || !e.getAttribute) return true;
+    return !e.getAttribute('data-c123key');
+  });
   /* 10.206：先算内容签名。c124BallSweep 只要判定 added>0 就会进来一次，
      旧实现无条件「删旧块 + append 新块」——菜单高度瞬间塌成 0 再撑开，
      这就是「总球框一直闪」的直接来源。内容没变就直接返回，不动 DOM。 */
-  var __sig = N124.extraOrder.map(function (k) { var q = N124.extra[k]; return k + ':' + (q ? q.label : ''); }).join('|');
+  var __sig = __show.map(function (k) { var q = N124.extra[k]; return k + ':' + (q ? q.label : ''); }).join('|');
   if (m.__extraSig === __sig) return;
   m.__extraSig = __sig;
-  if (!N124.extraOrder.length) {
+  if (!__show.length) {
     var old0 = m.querySelector('[data-c124extra]');
     if (old0 && old0.parentNode) old0.parentNode.removeChild(old0);
     return;
   }
   var old = m.querySelector('[data-c124extra]'); if (old && old.parentNode) old.parentNode.removeChild(old);
   var box = D.createElement('div'); box.setAttribute('data-c124extra', '1');
-  var h = '<div class="c123-gh" style="padding:6px 9px;font-size:11px;color:#6b7c8c;">补收的悬浮球（' + N124.extraOrder.length + ' 个 · 一个都没删）</div>';
-  N124.extraOrder.forEach(function (k) {
+  var h = '<div class="c123-gh" style="padding:6px 9px;font-size:11px;color:#6b7c8c;">补收的悬浮球（' + __show.length + ' 个 · 已被主列表收录的不重复显示）</div>';
+  /* 10.209：与主列表同一排序规则（字长由短到长），保证上下两块观感一致 */
+  var __ord209b = __show.slice();
+  try {
+    __ord209b.sort(function (a, b) {
+      var A = N124.extra[a], B = N124.extra[b];
+      var la = A ? String(A.label || '').length : 0, lb = B ? String(B.label || '').length : 0;
+      return la - lb;
+    });
+  } catch (e2) { __ord209b = __show.slice(); }
+  __ord209b.forEach(function (k) {
     var it = N124.extra[k]; if (!it) return;
     h += '<div class="c123-mrow"><span class="ic">•</span><span class="nm">' + c124esc(it.label) +
       '<small>点「打开」使用 · 可拖出独立摆放</small></span>' +
