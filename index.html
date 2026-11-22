@@ -75336,9 +75336,14 @@ else document.addEventListener('DOMContentLoaded',mountFab);
     } catch (e) { }
     return false;
   }
-  var watchdogTimer = null;
+  var watchdogTimer = null, lastArmT = 0;
   function armWatchdog() {
+    /* 10.212：全局 subtree Observer 每次 DOM 变动都进这里；实测 12 秒内重建 1100+ 次
+       40 秒定时器。3 秒内不重置，不改变超时语义（仍从最后一次显著变动起算）。 */
+    var nowT = Date.now();
+    if (watchdogTimer && nowT - lastArmT < 3000) return;
     if (watchdogTimer) clearTimeout(watchdogTimer);
+    lastArmT = nowT;
     watchdogTimer = setTimeout(function () {
       if (killSpin()) {
         toast('识别超时已中断，可直接用「📷 看图录入」对着卷面填答案判分', '');
@@ -138435,7 +138440,7 @@ window.__CTB144_SERIES__ = [
   }
   function pump() {
     if (!API) return;
-    while (RUNNING < 5 && QUEUE.length) {
+    while (RUNNING < 2 && QUEUE.length) {   /* 10.212：5→2，减少 JSONP script 抖动 */
       var bv = QUEUE.shift();
       if (!bv || VERIFYING[bv]) continue;
       VERIFYING[bv] = 1; RUNNING++;
@@ -138760,9 +138765,9 @@ window.__CTB144_SERIES__ = [
     clearLegacy();
     sweep(); injectPool();
     try { api.reset(); } catch (e) { }
-    try { W.setInterval(tick, 1500); } catch (e) { }
-    [0, 300, 1000, 2200].forEach(function (ms) { W.setTimeout(tick, ms); });
-    W.setTimeout(function () { repull(false); }, 900);
+    try { W.setInterval(tick, 4000); } catch (e) { }   /* 10.212：1500→4000 */
+    [0, 1500].forEach(function (ms) { W.setTimeout(tick, ms); });
+    W.setTimeout(function () { repull(false); }, 12000);  /* 10.212：900→12000，开机先让页面静下来 */
   }
   boot();
 
@@ -148818,6 +148823,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 /* ============================================================================
    10.210 · 使用台账（精确到分）+ 防挂机验证 + 统计与同步
    10.211 · 科目改按字段精确取（四级取数，去掉词频统计）+ AI 球建球即收纳
+   10.212 · 全文件问答附图（多模态透传）+ 页面卡顿治理（watchdog 节流 / 视频核验降频）
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -149126,7 +149132,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       '<div class="stem" id="ctb210Stem"></div>' +
       '<div id="ctb210Opts"></div>' +
       '<div class="fb" id="ctb210Fb"></div>' +
-      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.211 · 防挂机</span></div>' +
+      '<div class="foot"><span id="ctb210Cnt">第 1 题</span><span>10.212 · 防挂机</span></div>' +
       '</div>';
     D.body.appendChild(m);
   }
@@ -149357,6 +149363,239 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 
   try { console.info('[ctb210] 使用台账已启用，空闲 ' + cfg.idleMin + ' 分钟触发验证'); } catch (e) { }
 })(window, document);
+
+</script>
+
+
+
+<script id="ctb212Img">
+/* ==========================================================================
+   10.212 · 全文件问答「添加图片」
+   --------------------------------------------------------------------------
+   覆盖：随时问 AI、视频九维追问、判卷测评问答、资料库提问、650 答疑、
+        逐题精讲追问、自定义提问等所有文字输入框（含动态生成的面板）。
+   方式：输入框旁挂 📷 按钮 + 支持粘贴/拖拽；图片本地压缩为 data URL；
+        发送时由 __CTB_AICHAT__ 等通道包装层转成多模态 content 一起上传。
+        模型若不支持读图，自动以纯文本重试并在答复前加提示。
+   ========================================================================== */
+(function () {
+  var W = window, D = document;
+  if (W.__CTB212__) return;
+  W.__CTB212__ = 1;
+
+  var IDS = ['ctb179In', 'v84Q', 'ctv9Q', 'vqa131In', 'ldAskIn',
+             'aiAskI', 'aiQaInput', 'c126CustIn'];
+  var MAX_IMG = 3;
+  var MAX_SIDE = 1400;
+  var recs = [];          /* { input, bar, btn, file, imgs: [] } */
+  var lastInput = null;
+
+  function isQA(el) {
+    if (!el || el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
+    if (el.type === 'file' || el.type === 'hidden' || el.disabled) return false;
+    if (IDS.indexOf(el.id) >= 0) return true;
+    var p = String(el.getAttribute('placeholder') || '');
+    return /追问|提问|问老师|想问|随时问|问：|问:|输入问题|说点什么/.test(p);
+  }
+  function recOf(el) {
+    for (var i = 0; i < recs.length; i++) if (recs[i].input === el) return recs[i];
+    return null;
+  }
+
+  function cssOnce() {
+    if (D.getElementById('ctb212Css')) return;
+    var st = D.createElement('style'); st.id = 'ctb212Css';
+    st.textContent = [
+      '.ctb212-btn{flex:0 0 auto;width:30px;height:30px;line-height:28px;text-align:center;',
+      ' border:1px solid #cfd9e4;border-radius:7px;background:#f4f8fc;color:#2d5f8a;',
+      ' font-size:15px;cursor:pointer;user-select:none;touch-action:manipulation;}',
+      '.ctb212-btn:active{background:#dceaf6;}',
+      '.ctb212-bar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}',
+      '.ctb212-th{position:relative;width:34px;height:34px;border-radius:5px;overflow:hidden;',
+      ' border:1px solid #cbd7e3;background:#eef3f8;flex:0 0 auto;}',
+      '.ctb212-th img{width:100%;height:100%;object-fit:cover;display:block;}',
+      '.ctb212-x{position:absolute;right:0;top:0;width:13px;height:13px;line-height:12px;',
+      ' text-align:center;background:rgba(20,30,45,.72);color:#fff;font-size:10px;cursor:pointer;}'
+    ].join('');
+    (D.head || D.documentElement).appendChild(st);
+  }
+
+  function compress(file, cb) {
+    try {
+      var fr = new FileReader();
+      fr.onerror = function () { cb(null); };
+      fr.onload = function () {
+        var im = new Image();
+        im.onerror = function () { cb(null); };
+        im.onload = function () {
+          var w = im.width || 800, h = im.height || 600;
+          var s = Math.min(1, MAX_SIDE / Math.max(w, h));
+          w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+          var c = D.createElement('canvas'); c.width = w; c.height = h;
+          var ctx = c.getContext('2d');
+          if (!ctx) { cb(String(fr.result)); return; }
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(im, 0, 0, w, h);
+          try { cb(c.toDataURL('image/jpeg', 0.78)); }
+          catch (e2) { cb(String(fr.result)); }
+        };
+        im.src = String(fr.result);
+      };
+      fr.readAsDataURL(file);
+    } catch (e) { cb(null); }
+  }
+
+  function render(rec) {
+    if (!rec || !rec.bar) return;
+    rec.bar.innerHTML = '';
+    rec.imgs.forEach(function (u, i) {
+      var th = D.createElement('div'); th.className = 'ctb212-th';
+      var im = D.createElement('img'); im.src = u; im.alt = '附图' + (i + 1);
+      var x = D.createElement('span'); x.className = 'ctb212-x'; x.textContent = '×';
+      x.title = '移除这张图';
+      x.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        rec.imgs.splice(i, 1); render(rec);
+      }, false);
+      th.appendChild(im); th.appendChild(x); rec.bar.appendChild(th);
+    });
+  }
+
+  function addFiles(rec, files) {
+    if (!rec || !files || !files.length) return 0;
+    var left = MAX_IMG - rec.imgs.length, n = 0;
+    if (left <= 0) { rec.input.title = '最多附 ' + MAX_IMG + ' 张图片'; return 0; }
+    Array.prototype.forEach.call(files, function (f) {
+      if (!f || String(f.type || '').indexOf('image/') !== 0 || n >= left) return;
+      n++;
+      compress(f, function (u) { if (u) { rec.imgs.push(u); render(rec); } });
+    });
+    return n;
+  }
+
+  function attach(el) {
+    if (!isQA(el) || recOf(el)) return;
+    var host = el.parentNode; if (!host) return;
+    cssOnce();
+    var bar = D.createElement('span'); bar.className = 'ctb212-bar';
+    var btn = D.createElement('span'); btn.className = 'ctb212-btn';
+    btn.textContent = '📷'; btn.title = '添加图片（可粘贴 / 拖拽）';
+    var fi = D.createElement('input'); fi.type = 'file'; fi.accept = 'image/*';
+    fi.multiple = true; fi.style.display = 'none';
+    var rec = { input: el, bar: bar, btn: btn, file: fi, imgs: [] };
+    btn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      lastInput = el; try { fi.click(); } catch (e2) { }
+    }, false);
+    fi.addEventListener('change', function () {
+      addFiles(rec, fi.files); try { fi.value = ''; } catch (e2) { }
+    }, false);
+    el.addEventListener('focus', function () { lastInput = el; }, true);
+    el.addEventListener('paste', function (e) {
+      var it = e.clipboardData && e.clipboardData.items; if (!it) return;
+      var fs = [];
+      for (var i = 0; i < it.length; i++) {
+        if (String(it[i].type).indexOf('image/') === 0) {
+          var f = it[i].getAsFile && it[i].getAsFile(); if (f) fs.push(f);
+        }
+      }
+      if (fs.length) { e.preventDefault(); lastInput = el; addFiles(rec, fs); }
+    }, false);
+    el.addEventListener('dragover', function (e) { if (e.dataTransfer) e.preventDefault(); }, false);
+    el.addEventListener('drop', function (e) {
+      if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+      e.preventDefault(); lastInput = el; addFiles(rec, e.dataTransfer.files);
+    }, false);
+    try {
+      host.insertBefore(bar, el);
+      host.insertBefore(btn, el.nextSibling);
+      host.appendChild(fi);
+    } catch (e3) { return; }
+    recs.push(rec);
+  }
+
+  function sweep() {
+    var els = D.querySelectorAll('input,textarea');
+    for (var i = 0; i < els.length; i++) attach(els[i]);
+  }
+
+  /* 发送时取走图片：优先最近聚焦的输入框，其次任一还有图的输入框 */
+  function takeImages() {
+    var rec = null, i;
+    if (lastInput) rec = recOf(lastInput);
+    if (!rec || !rec.imgs.length) {
+      for (i = recs.length - 1; i >= 0; i--) if (recs[i].imgs.length) { rec = recs[i]; break; }
+    }
+    if (!rec || !rec.imgs.length) return [];
+    var out = rec.imgs.slice();
+    rec.imgs = []; render(rec);
+    return out;
+  }
+
+  var NAMES = ['__CTB_AICHAT__', 'aiRecogChat', 'aiChat', 'askAI'];
+  var busyWrap = false;
+  function wrap(name) {
+    var fn = W[name];
+    if (typeof fn !== 'function' || fn.__ctb212wrap) return;
+    var w = function (m, o) {
+      if (busyWrap) return fn.apply(this, arguments);
+      var imgs = takeImages();
+      if (!imgs.length) return fn.apply(this, arguments);
+      busyWrap = true;
+      var that = this;
+      var msgs;
+      if (Array.isArray(m)) {
+        msgs = m.map(function (x) {
+          if (x && x.role === 'user' && typeof x.content === 'string' && imgs.length) {
+            var all = imgs; imgs = [];
+            var c = [{ type: 'text', text: x.content + '\n（学生另外附了 ' + all.length + ' 张图片，请结合图片内容回答；若看不到图片就说明看不到。）' }];
+            all.forEach(function (u) { c.push({ type: 'image_url', image_url: { url: u } }); });
+            return { role: x.role, content: c };
+          }
+          return x;
+        });
+      } else if (typeof m === 'string') {
+        msgs = m + '\n（学生另外附了 ' + imgs.length + ' 张图片，请结合图片内容回答；若看不到图片就说明看不到。）';
+      } else { msgs = m; }
+      busyWrap = false;
+      try { W.__ctb212LastMsgs = msgs; } catch (e0) { }
+      var p;
+      try { p = fn.call(that, msgs, o); }
+      catch (err) { return Promise.reject(err); }
+      return Promise.resolve(p)['catch'](function (err) {
+        var t = String((err && err.message) || err || '');
+        if (!/image|vision|multi.?modal|unsupported|invalid.*content|400/i.test(t)) throw err;
+        return Promise.resolve(fn.call(that, m, o)).then(function (ans) {
+          return '【提示】当前模型不支持读图，以下仅依据文字作答。\n' + String(ans || '');
+        });
+      });
+    };
+    w.__ctb212wrap = true;
+    try { W[name] = w; } catch (e) { }
+  }
+
+  function boot() {
+    sweep();
+    NAMES.forEach(wrap);
+    /* 视频面板等动态生成的输入框补挂 */
+    setInterval(function () { sweep(); NAMES.forEach(wrap); }, 1200);
+  }
+  if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', boot, false);
+  else boot();
+
+  W.CTB212 = {
+    attach: sweep,
+    count: function () { return recs.length; },
+    pending: function () { return recs.map(function (r) { return { id: r.input.id, n: r.imgs.length }; }); },
+    lastMsgs: function () { return W.__ctb212LastMsgs || null; },
+    add: function (id, u) {
+      var r = null;
+      recs.forEach(function (x) { if (x.input.id === id) r = x; });
+      if (r) { r.imgs.push(u); render(r); lastInput = r.input; return true; }
+      return false;
+    }
+  };
+})();
 
 </script>
 
