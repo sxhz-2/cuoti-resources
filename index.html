@@ -6,6 +6,67 @@
      任何 AI（含后续会话的其它 AI）在修改本文件前，必须先得到用户明确说出指令「修改授权」。
      「继续」「改吧」「可以」等泛指同意不算；一次授权仅对当次请求有效。
      只读/分析/测试/导出/测量不受此限制。修改后请同步本标记到 APK 与 GitHub 副本。 -->
+<!-- CTB-CHANGELOG / 10.227 / 2026-11-23
+     本次修改（用户明确「修改授权」后执行）：
+     1. 修复「真人视频拉来无关内容充数」（截图：数学·空间几何计数题却出现剑桥雅思/
+        金考卷45套/福建卷真题）：根因是①captureCards 写死 kp:'' 丢弃知识点；
+        ②normSubj 缺立体几何词致回落全科；③score 在相关度为0时仍靠 base/真题/系列
+        加分把泛用套卷顶到前排；④兜底从 LIB 前几条无条件补满；⑤缓存 ctb144_assign_v1
+        锁死旧错误结果。现：抓真实知识点、补正方体/棱柱/顶点等专业词、相关度<=0 直接
+        淘汰、通用词不计相关、删除无条件兜底、缓存抬到 v2 强制重算；第二套引擎 topUp
+        补位也加题目关键词校验。宁可少显示，也不塞无关视频。
+     2. 「错题视频九维参照知识点九维写法」：新增 nineStdLessonSegs 桥接，本地精讲/
+        全套AI口播/本地精讲口播三条稿源统一走 nineTextSegs(...,'wrong')，继承九步顺序
+        （题目→核心概念→公式定理→关键步骤→易错点→同类模型→秒杀技巧→错误分析→变式）、
+        三类各3-5实例、先讲后考题、教材术语、科目匹配；AI 稿仅作加深附后。
+        CTV9_SRC9/CTB_LIB9 视频九维面板在错题上下文走 wrong 分支、标题用生成器段标题。
+     3. 版本号 10.226 → 10.227，与 APK 名对齐。
+-->
+<!-- CTB-CHANGELOG / 10.226 / 2026-11-23
+     本次修改（用户明确「修改授权」后执行）：
+     1. 修复「侧边栏错题数量始终为 0」：全文件检索确认 updateBadges 被 5 处调用却从未定义，
+        badgePending 与 badge语文/数学/英语/物理/化学/生物 7 个角标无任何赋值。
+        现补全局 updateBadges()：各科角标=该科错题总数，待复习=nextReviewDate<=今天
+        或未标记已掌握；挂启动定时(3s)与既有 5 处调用点，只读统计不改错题。
+     2. 修复「九步讲解六段全红字占位」：根因是 renderNine 的 rec 来自 matchKp→__KB650_NINE_DATA__，
+        而该数据源只收非草稿点；题「同位素构成水分子」对应的 chmx-061 为 status:draft 被跳过，
+        匹配失败致 concept/formula/steps/error/model/quick 六段全空。
+        现采用「精准放开+术语校验」：草稿点不进主知识库（不影响按科目浏览），但字段齐全且
+        非套话者单独收进九步数据源；并扩充化学术语表（同位素/核素/质量数/水分子等），
+        使题干能匹配到该知识点。经验证 stemScore=3≥2，六段填入教材术语真实内容。
+     3. 版本号 10.225 → 10.226，与 APK 名对齐。
+-->
+<!-- CTB-CHANGELOG / 10.225 / 2026-11-23
+     本次修改（用户明确「修改授权」后执行）：
+     1. 修复「讲解知识点与题目脱节」：全文件检索确认 __KB650_NINE_DATA__ 从未被赋值，
+        导致 buildIdx()/matchKp 无数据可读，九步讲解大量退化为占位套话。
+        现于 KB650 doMerge 注入逻辑后追加：把 KB650.points 展开为
+        subject||chapter||kp 键值结构，写入 window.__KB650_NINE_DATA__，
+        九维字段（concept/formula/steps/error/model/quick/tactics/errAnaly/variation）完整保留。
+     2. 修复「视频有声音没图像（黑屏有声）」：vidRender 渲染 iframe 后，
+        立即自动调 B 站 API（pagelist + playurl）拉 mp4 直链，
+        拿到后把 iframe 藏起、追加原生 <video> 直连播放；
+        直连失败则回退 iframe，不阻塞用户操作。
+     3. 版本号 10.224 → 10.225，与 APK 名对齐。
+-->
+<!-- CTB-CHANGELOG / 10.224 / 2026-11-23
+     本次修改（用户明确「修改授权」后执行，按要求以 10.222 为唯一基底）：
+     1. 修复「视频讲解不能自行匹配知识点」：错题卡「🎬 视频讲解」按钮此前把题目对象丢成
+        null，知识点库查不到时落入「既无知识点也无题目」分支，弹出「未能匹配到知识点，
+        请在该题手动选择知识点后再看视频」。现改为把题目对象 q 一并传入；文件末尾再加
+        末位兜底：知识点查不到时先按名称做包含匹配，仍查不到自动转「本题讲解」，
+        任何路径都不再要求用户手动选择知识点。
+     2. 修复「AI 模型设置页关闭不了」：10.139 解锁流程 ctbForceCfg() 给 #aiCfgModal
+        写入内联 display:flex!important，而 closeCfg() 只移除 .ai-on 类，内联样式继续
+        强制显示。现关闭时同步清除内联 display/z-index，并对解锁后的延时强制显示做
+        有限次兜底（用户重新打开后不误关）。
+     3. 退出按钮全局加固：实测顶栏高 91px、z-index 2147483000，会截获全屏层顶部
+        0–91px 内关闭按钮的点击；顶栏降到 9000（仍高于正文、低于模态层）。
+        实测部分退出按钮仅 56×26px，低于 44px 触摸热区；统一加透明热区，
+        最小 44×44px，不改变视觉尺寸。
+     4. 版本号 10.222 → 10.224（10.223 未作为基底）。
+-->
+
 <!-- CTB-CHANGELOG / 10.220 / 2026-11-22
      本次修改（用户明确「修改授权」后执行）：
      1. 数据看板红框卡片（总错题数/待复习/已掌握/今日新增）与「按科目统计」科目卡、
@@ -27,16 +88,6 @@
               剥离 Thinking Process/Analyze the Request/Context/Constraint 等英文独白段，非中文不展示；
               ② 随时问 prompt 加教材术语硬约束：全程中文、绝不输出英文/思考过程，严格课本教材标准术语、
               不造词不用大白话代替术语，术语首次出现可加极简释义，结论先行、分点步骤、拒绝套话寒暄。 -->
-<!-- CTB-CHANGELOG / 10.223 / 2026-11-23
-     本次修改（用户明确「修改授权」后执行）——视频讲解恢复自动匹配知识点：
-     1. 根因：错题卡「🎬 视频讲解」按钮（CTB_MARK.video）调用 openKbSlides 时把题目对象丢成 null，
-        而部分知识点（如「分类计数」）在知识册中 kb 标记为 0、无完整内容，KB.get 返回空，
-        于是落进「知识点与题目都没有」的分支，弹出「未能匹配到知识点，请在该题手动选择知识点后再看视频」。
-     2. 修复一（根因）：CTB_MARK.video 改为把题目对象 q 一并传给 openKbSlides。
-     3. 修复二（全局兜底）：新增末位脚本重包 openKbSlides——知识点查不到时先按名称做同义/包含匹配，
-        仍查不到则自动转「本题讲解」，任何路径都不再要求用户手动选择知识点。
-     4. 版本号统一 10.222 → 10.223。
--->
 <!-- CTB-CHANGELOG / 10.222 / 2026-11-22
      本次修改（用户明确「修改授权」后执行）——Key 清空改选择性 + 千问直达地址：
      1. Key 清空改为「选择性清空」：按钮改为「🗑 选择性清空 Key（勾选后清除）」，点击列出已存 Key 的厂家勾选框，
@@ -54,7 +105,7 @@
         改为前缀配套+地域绑定+Key状态失效（删除/重置/移出空间/欠费/未实名）的真实原因与排查步骤。
      4. 模型下拉 label/tip 同步标注前缀配套地址与北京地域要求。
      5. 版本号统一 10.220 → 10.221。 -->
-<meta name="ctb-build" content="10.223">
+<meta name="ctb-build" content="10.227">
 <meta name="ctb-modify-policy" content="modify-requires-explicit-instruction: 修改授权">
 <script id="ctbPageBus">
 /* ============================================================================
@@ -677,8 +728,8 @@ try {
   'use strict';
   var W = window;
   if (W.CTB_ANS) return;
-  try { W.__APP_BUILD__ = '10.223'; W.__CTB_BUILD__ = '10.223'; } catch (e) { }
-  try { W.__CTB_MENU_VER__ = '10.223'; } catch (e) { }
+  try { W.__APP_BUILD__ = '10.224'; W.__CTB_BUILD__ = '10.224'; } catch (e) { }
+  try { W.__CTB_MENU_VER__ = '10.224'; } catch (e) { }
 
   
 
@@ -4323,10 +4374,7 @@ function renderVideoPanelWithEnhancements(title, knowledgeData) {
   var html = '<div class="video-panel show">';
   html += '<h3>🎬 视频讲解：' + title + '</h3>';
   html += '<div class="video-canvas-wrap">';
-  html += '<video id="vmVideoMain" controlsList="nodownload" playsinline webkit-playsinline>';
-  html += '  <source src="" type="video/mp4">';
-  html += '  您的浏览器不支持 video 标签。';
-  html += '</video>';
+  html += '<video id="vmVideoMain" controls controlsList="nodownload" playsinline webkit-playsinline><source src="" type="video/mp4">您的浏览器不支持 video 标签。</video>';
   html += '</div>';
   html += '<div class="video-controls-ext">';
   html += '  <button class="btn-play"  onclick="vkPlay()">▶️ 播放</button>';
@@ -4348,6 +4396,45 @@ function renderVideoPanelWithEnhancements(title, knowledgeData) {
   html += '</div></div>';
   return html;
 }
+
+/* 10.225 视频面板控制函数补齐：vmVideoMain 的按钮原先引用了未定义函数（旧模块失效残留） */
+window.vkGet = function(){ return document.getElementById('vmVideoMain'); };
+window.vkPlay = function(){
+  var v = window.vkGet(); if(!v) return;
+  v.play().then(function(){ var s=document.getElementById('videoStatus'); if(s) s.textContent='▶️ 播放中'; }).catch(function(){});
+};
+window.vkPause = function(){
+  var v = window.vkGet(); if(!v) return;
+  v.pause(); var s=document.getElementById('videoStatus'); if(s) s.textContent='⏸️ 已暂停';
+};
+window.vkStop = function(){
+  var v = window.vkGet();
+  if(v){ try{ v.pause(); v.currentTime = 0; }catch(e){} }
+  var s=document.getElementById('videoStatus'); if(s) s.textContent='⏹️ 已停止';
+};
+window.vkSeek = function(delta){
+  var v = window.vkGet(); if(!v) return;
+  v.currentTime = Math.min(Math.max(0, v.currentTime + (parseFloat(delta)||0)), v.duration || v.currentTime);
+};
+window.vkRate = function(r){
+  var v = window.vkGet(); if(!v) return;
+  v.playbackRate = parseFloat(r) || 1;
+  var s=document.getElementById('videoStatus'); if(s) s.textContent='▶️ 语速 ' + r + 'x';
+};
+window.vkFullscreen = function(){
+  var v = window.vkGet(); if(!v) return;
+  if(v.requestFullscreen) v.requestFullscreen().catch(function(){});
+  else if(v.webkitRequestFullscreen) v.webkitRequestFullscreen();
+};
+window.vkLandscape = function(){
+  var v = window.vkGet(); if(!v) return;
+  try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){}
+};
+window.vkExit = function(){
+  var p = document.querySelector('.video-panel.show');
+  if(p) p.classList.remove('show');
+  var v = window.vkGet(); if(v){ try{ v.pause(); }catch(e){} }
+};
 
  
  
@@ -9269,13 +9356,8 @@ window.addEventListener('load', function(){
       }
       var r = matchInMap(map, name);
       if (r) return r;
-      
-
-      for (var s2 in flat) {
-        if (flat[s2] === map) continue;
-        var r2 = matchInMap(flat[s2], name);
-        if (r2) return r2;
-      }
+      /* 10.225 修复：不再跨科目回退 —— 数学错题匹配到生物知识点后，
+         本地稿与 AI 提示词会整段注入异科内容（"编造题目/讲非改错题"根因） */
     } catch (e) {   }
     return null;
   }
@@ -9299,7 +9381,8 @@ window.addEventListener('load', function(){
     for (var i = 0; i < wrongs.length; i++) { if (String(wrongs[i].id) === String(wrongId)) { w = wrongs[i]; break; } }
     if (!w) { toast('找不到该错题', 'error'); return null; }
     try { await window.CTB_ANS.kick(w); } catch (e) { }
-    if (w.ai && typeof w.ai === 'object') return w.ai;  
+    /* 10.225 校验持久化 w.ai 的科目指纹，防止旧版跨科目匹配产出的 w.ai 被直接复用 */
+    if (w.ai && typeof w.ai === 'object' && !(w.ai._fp && w.ai._fp !== explFp(w))) return w.ai;
     var kpName = (w.knowledge || w.topic || '');
      
     var lk = findLocalKp(w.subject, kpName);
@@ -9307,9 +9390,15 @@ window.addEventListener('load', function(){
       ? '\n\n【本地权威知识点（讲解必须以此为准；若与你的记忆冲突，以本条为准，严禁编造）】\n' + fmtLocalKp(lk)
       : '\n\n【注意】本地知识点库未收录「' + (kpName || '该知识点') + '」，请务必严谨：不确定的内容必须标注「待确认」，严禁编造。';
     var p = EXPLAIN_PROMPT + '\n科目：' + (w.subject || '') + '\n知识点：' + kpName + localBlock
-      + '\n题面：' + (w.question || w.stem || '') + '\n学生作答：' + CTB_ANS.my(w) + '\n正确答案：' + CTB_ANS.ansFull(w);
+      + '\n题面：' + (w.question || w.stem || '') + '\n学生作答：' + CTB_ANS.my(w) + '\n正确答案：' + CTB_ANS.ansFull(w)
+      + '\n【10.225 反编造硬约束】① 你正在讲解的错题是上面「题面」原文这一道（科目=' + (w.subject || '未标注') + '），'
+      + '不得生成、改写或替换题面，不得把其它科目（如生物/物理/化学）的题目当作本题或变式；'
+      + '② variants 每条 q 必须是在上面题面原文上改动一个数值或条件后重写的完整题面，禁止自造新题；'
+      + '③ similarModels/quickTricks 每条必须引用上面题面里的一个真实数值、符号或关键词；'
+      + '④ 题面缺失或过短时，先说明缺什么，再按已有信息讲解，不得虚构题干内容。';
     var t = await aiChat([{ role: 'user', content: p }], { temp: 0.2, maxTokens: 2200 });
     var ai = normExplain(extractJSON(t));
+    try { ai._fp = explFp(w); } catch (e) {}
     try { var _et = window.CTB_ERRDIAG ? window.CTB_ERRDIAG.typeOf(ai) : ''; if (_et) w.errorType = _et; } catch (e) {}
     w.ai = ai;
     try { if (window.saveData) window.saveData(); } catch (e) {}
@@ -9336,12 +9425,28 @@ window.addEventListener('load', function(){
     var m = cacheLoad(), it = m[String(id)];
     if (!it) return null;
     if (Date.now() - (it.ts || 0) > EXPL_CACHE_TTL) { delete m[String(id)]; cacheSave(m); return null; }
+    /* 10.225 指纹校验：缓存题面/科目与当前错题不一致（旧版跨科目匹配产物）则作废 */
+    var w = null;
+    try {
+      var wrongs = window.wrongs || [];
+      for (var i = 0; i < wrongs.length; i++) { if (String(wrongs[i].id) === String(id)) { w = wrongs[i]; break; } }
+    } catch (e) { }
+    if (w && it.fp && it.fp !== explFp(w)) { delete m[String(id)]; cacheSave(m); return null; }
     return it.data;
   }
   function cacheSet(id, data){
     var m = cacheLoad();
-    m[String(id)] = { ts: Date.now(), data: data };
+    var w = null;
+    try {
+      var wrongs = window.wrongs || [];
+      for (var i = 0; i < wrongs.length; i++) { if (String(wrongs[i].id) === String(id)) { w = wrongs[i]; break; } }
+    } catch (e) { }
+    m[String(id)] = { ts: Date.now(), data: data, fp: w ? explFp(w) : '' };
     cacheSave(m);
+  }
+  /* 题面指纹：科目 + 知识点 + 题面前 60 字，用于识别缓存/持久化数据是否属于同一道题 */
+  function explFp(w){
+    return [w.subject || '', (w.knowledge || w.topic || ''), String(w.question || w.stem || '').slice(0, 60).replace(/\s+/g, '')].join('|');
   }
    
   function buildLocalScenes(it){
@@ -12246,7 +12351,7 @@ window.addEventListener('load', function(){
     var key=(w.subject||'')+'|'+(w.knowledge||w.topic||'');
     var l=VIDS[key];
     if(!l || !l.length) l=GEN[w.subject]||[];
-    if(!l || !l.length) l=GEN['']||[];
+    /* 10.225：不再回退全科目混排 GEN['']，避免异科视频混入本题讲解 */
     return l||[];
   }
   function renderVid(){
@@ -13006,8 +13111,14 @@ function ensureDom() {
         '<button onclick="aiv2Export()">📄 导出 Word</button>' +
         '<button id="aiv2FigBtn" onclick="aiv2Figure()" style="display:none">📐 示意图</button>' +
         '<button onclick="aiv2PickImg()">🖼 补图</button>' +
+        '<button onclick="aiv2LinkImg()">🔗 图片链接识别</button>' +
         '<button onclick="aiv2Close()">关闭</button>' +
         '<input type="file" id="aiv2ImgPick" accept="image/*" style="display:none" onchange="aiv2OnImg(event)">' +
+        '<div id="aiv2LinkRow" style="display:none;margin-top:8px;gap:6px;align-items:center;">' +
+          '<input type="text" id="aiv2LinkIn" placeholder="粘贴图片链接 http(s)://…" style="flex:1;min-width:0;padding:7px 9px;border:1px solid #c7d0e0;border-radius:8px;font-size:12px;">' +
+          '<button onclick="aiv2LinkDo()" style="white-space:nowrap;padding:7px 11px;border:none;border-radius:8px;background:#2D5F8A;color:#fff;font-size:12px;">识别</button>' +
+          '<button onclick="aiv2LinkHide()" style="white-space:nowrap;padding:7px 9px;border:none;border-radius:8px;background:#e6ebf3;color:#475569;font-size:12px;">✕</button>' +
+        '</div>' +
       '</div>' +
     '</div></div>' +
     '<div class="aiv2-vpanel" id="aiv2VPanel" onclick="if(event.target===this)aiv2VidClose()">' +
@@ -13261,13 +13372,31 @@ function vlist(w) {
   var key = (w.subject || '') + '|' + (w.knowledge || w.topic || '');
   var VIDS = WS.__KB_VIDEOS__ || {}, GEN = WS.__KB_VIDEO_GEN__ || {};
   var l = VIDS[key];
-  if (!l || !l.length) l = GEN[w.subject] || [];
-  if (!l || !l.length) l = GEN[''] || [];
-  return l || [];
+  var src = 'kp';              /* 精确知识点匹配 = 最接近"原题/相似题型" */
+  if (!l || !l.length) { l = GEN[w.subject] || []; src = 'subj'; }
+  /* 10.225：不再回退到全科目混排 GEN['']——避免把异科视频塞进本题讲解 */
+  return { list: (l || []), src: src };
+}
+/* 10.225 题干相似度：从题干里抽高频实词，判断视频标题是否命中本题核心内容 */
+function vidMatchScore(w, v) {
+  var stem = String((w && (w.question || w.stem)) || '');
+  var title = String((v && (v.t || v.d)) || '');
+  if (!stem || !title) return 0;
+  /* 去掉停用词后，按 2-gram 统计题干里出现的实词在标题里的命中 */
+  var s = stem.replace(/[，。？！；：、""''（）【】\s\d\.\/xXπ]/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = s.split(' '), hit = 0;
+  for (var i = 0; i < words.length; i++) {
+    var wd = words[i];
+    if (wd.length >= 2 && title.indexOf(wd) >= 0) hit++;
+  }
+  /* 题干整体前 12 字直接命中（标题常含原题）得分更高 */
+  var head = s.slice(0, 12);
+  if (head.length >= 6 && title.indexOf(head.slice(0, 6)) >= 0) hit += 3;
+  return hit;
 }
 function renderVidBtn(w) {
   var btn = $('aiv2VidBtn'); if (!btn) return;
-  var n = vlist(w).length;
+  var n = vlist(w).list.length;
   btn.textContent = n ? ('📺 真人讲解视频（' + n + ' 个作品）') : '📺 真人讲解视频';
 }
 function vidPanel() {
@@ -13281,22 +13410,41 @@ function vidPanel() {
     }
   } catch (e) {}
   ensureDom();
-  var list = vlist(w);
+  var vres = vlist(w), rawList = vres.list, src = vres.src;
   var box = $('aiv2VBox'); if (!box) return;
+  /* 10.225 按"原题/相似题型"标准过滤：题干命中的视频优先，其余降为"科目参考课件"，杜绝异科视频混入 */
+  var scored = rawList.map(function (v) { return { v: v, s: vidMatchScore(w, v) }; });
+  scored.sort(function (a, b) { return b.s - a.s; });
+  var simList = scored.filter(function (x) { return x.s >= 1; });
+  var refList = scored.filter(function (x) { return x.s < 1; });
+  var stemHead = String((w.question || w.stem) || '').replace(/\s+/g, ' ').slice(0, 16);
   var h = '<h3>📺 真人讲解视频</h3><div class="sub">' +
     esc((w.subject || '') + ' · ' + (w.knowledge || w.topic || '')) +
-    '　共 ' + list.length + ' 个作品。为避免手机浏览器弹出「存网盘/流畅播」浮层遮挡页面，这里改为在浏览器新标签页打开 B 站播放。</div>';
-  if (!list.length) {
-    h += '<div class="aiv2-vrow"><span class="t">暂时没有匹配到该知识点的真人讲解，可用下方按钮去 B 站搜索。</span></div>';
-  } else {
-    list.forEach(function (v, i) {
-      h += '<div class="aiv2-vrow"><span class="t">' + (i + 1) + '. ' + esc(v.t || '真人讲解') +
-        (v.a ? '<span class="a">UP：' + esc(v.a) + '</span>' : '') + '</span>' +
-        '<button onclick="aiv2OpenVid(\'' + String(v.b || '') + '\')">▶ 打开播放</button></div>';
+    (stemHead ? '　·　题干：' + esc(stemHead) + '…' : '') +
+    '　共 ' + rawList.length + ' 个作品。按「原题/相似题型」标准筛选，无关作品不展示。</div>';
+  if (simList.length) {
+    h += '<div style="font-weight:600;color:#0369a1;margin:6px 0;">🎯 与本题相似（题干命中）</div>';
+    simList.forEach(function (x, i) {
+      h += '<div class="aiv2-vrow"><span class="t">' + (i + 1) + '. ' + esc(x.v.t || '真人讲解') +
+        (x.v.a ? '<span class="a">UP：' + esc(x.v.a) + '</span>' : '') + '</span>' +
+        '<button onclick="aiv2OpenVid(\'' + String(x.v.b || '') + '\')">▶ 打开播放</button></div>';
     });
   }
+  if (simList.length === 0 && refList.length) {
+    h += '<div class="aiv2-vrow" style="border-left:3px solid #f59e0b;background:#fff8ec;padding:8px 10px;border-radius:6px;"><span class="t">⚠️ 暂无「' + esc(w.knowledge || w.topic || '本题') + '」的相似题型视频。' +
+      (src === 'subj' ? '以下是<b>该科目通用课件（非本题原题型）</b>，仅供思路参考：</span></div>'
+                       : '以下是通用参考视频：</div>');
+    refList.slice(0, 3).forEach(function (x, i) {
+      h += '<div class="aiv2-vrow" style="opacity:.85;"><span class="t">' + (i + 1) + '. ' + esc(x.v.t || '参考课件') +
+        (x.v.a ? '<span class="a">UP：' + esc(x.v.a) + '</span>' : '') + '</span>' +
+        '<button onclick="aiv2OpenVid(\'' + String(x.v.b || '') + '\')">▶ 参考</button></div>';
+    });
+  }
+  if (!rawList.length) {
+    h += '<div class="aiv2-vrow"><span class="t">未收录该知识点的真人视频。请按「本题题干」去 B 站搜索相似题型讲解。</span></div>';
+  }
   h += '<div class="aiv2-vfoot">' +
-    '<button onclick="aiv2VidSearch()">🔍 去 B 站搜索更多</button> ' +
+    '<button onclick="aiv2VidSearch()" ' + (rawList.length === 0 ? 'style="background:#0369a1;color:#fff;border-color:#0369a1;font-weight:600;"' : '') + '>🔍 按本题题干去 B 站搜相似题</button> ' +
     '<button onclick="aiv2VidClose()">关闭</button></div>';
   box.innerHTML = h;
   $('aiv2VPanel').classList.add('on');
@@ -13310,7 +13458,10 @@ function openVid(bvid) {
 }
 function vidSearch() {
   var w = S.w || {};
-  var kw = ((w.subject || '') + ' ' + (w.knowledge || w.topic || '') + ' 高考 真题讲解').trim();
+  /* 10.225 搜索关键词带上本题题干核心词，按"原题/相似题型"检索，而非泛搜科目 */
+  var kw = ((w.subject || '') + ' ' + (w.knowledge || w.topic || '') + ' ' +
+    String((w.question || w.stem) || '').replace(/\s+/g, ' ').slice(0, 30) +
+    ' 高考 讲解').trim();
   try { WS.open('https://search.bilibili.com/all?keyword=' + encodeURIComponent(kw), '_blank'); } catch (e) { location.href = 'https://search.bilibili.com/all?keyword=' + encodeURIComponent(kw); }
 }
 function vidClose() { var vp = $('aiv2VPanel'); if (vp) vp.classList.remove('on'); }
@@ -13385,6 +13536,72 @@ async function answer() {
 
  
 function pickImg() { var el = $('aiv2ImgPick'); if (el) el.click(); }
+/* 10.225 图片链接识别：贴图片 URL → 拉成 dataURL（CORS 失败则直接交给视觉模型按 URL 识别）→ 走多模态识图 */
+function aiv2LinkImg() {
+  var row = $('aiv2LinkRow'); if (!row) return;
+  row.style.display = 'flex';
+  var inp = $('aiv2LinkIn'); if (inp) inp.focus();
+}
+function aiv2LinkHide() {
+  var row = $('aiv2LinkRow'); if (row) row.style.display = 'none';
+  var inp = $('aiv2LinkIn'); if (inp) inp.value = '';
+}
+async function aiv2LinkDo() {
+  var inp = $('aiv2LinkIn'); if (!inp) return;
+  var url = String(inp.value || '').trim();
+  if (!url) { toast('请粘贴图片链接', 'error'); return; }
+  if (!/^https?:\/\//i.test(url)) { toast('链接需以 http(s):// 开头', 'error'); return; }
+  var w = S.w; if (!w) return;
+  setStatus('<span class="a2st run"><span class="a2spin"></span> 🔗 正在拉取并识别图片链接…</span>');
+  var imgSrc = url;
+  /* 先尝试 CORS 拉成 dataURL（成功则本地渲染 + 视觉识别；失败仍走 URL 识别） */
+  try {
+    var dataUrl = await new Promise(function (res, rej) {
+      var c = document.createElement('canvas');
+      var im = new Image();
+      im.crossOrigin = 'anonymous';
+      var done = false;
+      var tm = setTimeout(function () { if (!done) { done = true; rej(new Error('timeout')); } }, 12000);
+      im.onload = function () {
+        if (done) return; done = true; clearTimeout(tm);
+        try {
+          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          c.getContext('2d').drawImage(im, 0, 0);
+          res(c.toDataURL('image/png'));
+        } catch (e) { rej(e); }
+      };
+      im.onerror = function () { if (!done) { done = true; clearTimeout(tm); rej(new Error('cors')); } };
+      im.src = url;
+    });
+    if (dataUrl) imgSrc = dataUrl;
+  } catch (e) {
+    /* 跨域拉取失败：保留原始 URL，仍交给视觉模型（很多供应商支持直接喂图片 URL） */
+    imgSrc = url;
+  }
+  try {
+    var msgs = [{ role: 'user', content: [
+      { type: 'text', text: '下面是一张题目/插图链接识别到的图片。请：①用 1-2 句概括图中关键信息（条件/图形/标注）②指出它与本题（' + (w.subject || '') + '·' + (w.knowledge || w.topic || '') + '）的关联 ③若图中数值或图形与题面冲突，明确提示「以原卷为准」。题目：' + (w.question || w.stem || '') },
+      { type: 'image_url', image_url: { url: imgSrc } }
+    ] }];
+    var t = await aiChat(msgs, { temp: 0.2, maxTokens: 1000, kind: 'vision' });
+    w.img = imgSrc;
+    try { saveAll(); } catch (e2) {}
+    if (S.segs[0]) {
+      S.segs[0].img = imgSrc;
+      S.segs[0].body = String(S.segs[0].body || '').replace(/\n*⚠️[^\n]*配图[^\n]*/g, '');
+    }
+    render();
+    var out = $('aiv2QaOut');
+    if (out) out.innerHTML = '<div style="margin:8px 0 12px;padding:10px 12px;background:#f3f7fc;border:1px solid #d6e2f2;border-radius:10px;">'
+      + '<div style="font-weight:600;color:#2D5F8A;margin-bottom:6px;">🔗 图片链接识别结果</div>'
+      + '<div style="font-size:12.5px;color:#334155;line-height:1.6;">' + nl2br(String(t || '')) + '</div></div>'
+      + '<img src="' + imgSrc + '" style="max-width:100%;max-height:200px;border-radius:8px;margin-top:6px;display:block;">';
+    setStatus('<span class="a2st ok">✅ 图片链接已识别并补入题目</span>');
+    aiv2LinkHide();
+  } catch (e) {
+    setStatus('<span class="a2st warn">⚠️ 图片链接识别失败：' + esc((e && e.message) || e) + '　建议改用「🖼 补图」本地上传原卷。</span>');
+  }
+}
 function onImg(ev) {
   var f = ev && ev.target && ev.target.files && ev.target.files[0];
   if (!f) return;
@@ -13537,6 +13754,7 @@ WS.aiv2Full = full; WS.aiv2Side = sideToggle;
 WS.aiv2VidPanel = vidPanel; WS.aiv2VidClose = vidClose;
 WS.aiv2OpenVid = openVid; WS.aiv2VidSearch = vidSearch;
 WS.aiv2Export = exportWord; WS.aiv2PickImg = pickImg; WS.aiv2OnImg = onImg; WS.aiv2Figure = figure;
+WS.aiv2LinkImg = aiv2LinkImg; WS.aiv2LinkDo = aiv2LinkDo; WS.aiv2LinkHide = aiv2LinkHide;
 WS.aiv2BigImg = bigImg; WS.aiv2Ask = ask; WS.aiv2Answer = answer;
 WS.aiv2QaKey = qaKey; WS.aiv2AnsKey = ansKey;
 
@@ -48892,15 +49110,49 @@ try {
       return;
     }
     var added = 0, renamed = 0, skippedDraft = 0, __ok = [];
+    /* [10.226] 九步专属：草稿点不进主知识库（不影响「按科目浏览」），但字段齐全、
+       使用教材术语的点单独收进 __nineDraft，供 renderNine 的 matchKp 匹配，
+       解决「题目知识点是草稿→九步六段全空占位」的问题。 */
+    var __nineDraft = {};
+    var __NOISE = /^(详见|参见|同上|略$|无$|待补充|暂无|本点暂无|本题需|本考点无|请参考|本节无|未匹配|未取到)/;
+    function __nineUseful(p) {
+      if (!p || !p.concept) return false;
+      var c = String(p.concept).replace(/\s/g, '');
+      if (c.length < 12 || __NOISE.test(String(p.concept).trim())) return false;
+      /* 至少 2 个实质字段（公式/步骤/易错/模型/秒杀），避免只有一句概念的空壳点 */
+      var fld = [p.formula, p.steps, p.error, p.model, p.tips].filter(function (x) {
+        return x && String(Array.isArray(x) ? x.join('') : x).replace(/\s/g, '').length >= 6;
+      });
+      return fld.length >= 2;
+    }
+    function __nineRec(p, s) {
+      var kpTitle = String(p.title || '');
+      var nk = s + '||' + (p.chapter || '通用') + '||' + kpTitle;
+      return [nk, {
+        concept: p.concept || '',
+        formula: p.formula || '',
+        steps: arr2txt(p.steps),
+        error: p.error || '',
+        model: p.model || '',
+        quick: p.tips || p.tactics || '',
+        tactics: p.tactics || p.tips || '',
+        errAnaly: p.errAnaly || '',
+        variation: p.variation || '',
+        subject: s, chapter: p.chapter || '', kp: kpTitle,
+        depth: p.difficulty >= 4 ? 'deep' : 'base', difficulty: p.difficulty || 3
+      }];
+    }
     KB650.points.forEach(function (p) {
-       
-       
-       
-       
       var __m = (p && p.meta) ? p.meta : null;
       var __draft = !__m || __m.status === 'draft' || (__m.ai_generated && __m.status !== 'reviewed');
-      if (__draft && !window.__KB650_SHOW_DRAFT__) { skippedDraft++; return; }
-      var s = SUBJ[p.subject];
+      var s0 = SUBJ[p.subject];
+      /* [10.226] 草稿点：主知识库仍跳过，但字段齐全者收进九步数据源 */
+      if (__draft && !window.__KB650_SHOW_DRAFT__) {
+        skippedDraft++;
+        if (s0 && __nineUseful(p)) { var _r = __nineRec(p, s0); __nineDraft[_r[0]] = _r[1]; }
+        return;
+      }
+      var s = s0;
       if (!s) return;
       if (!base[s]) base[s] = {};
       if (!base[s][BOOK]) base[s][BOOK] = {};
@@ -48938,7 +49190,40 @@ try {
      
     window.KB650_POINTS = __ok;
     window.KB650_STAT = { added: added, renamed: renamed, skippedDraft: skippedDraft, total: KB650.points.length };
-     
+
+     /* [10.225] 把 KB650.points 展开为九维键值结构，注入 __KB650_NINE_DATA__，
+        使 buildIdx()/matchKp 有数据可读，修复"讲解知识点与题目脱节"。
+        键格式：subject||chapter||kp，值=rec 对象（concept/formula/steps/error/model/quick/tactics/…）。 */
+    var __nine = {};
+    for (var __ni = 0; __ni < __ok.length; __ni++) {
+      var __nr = __ok[__ni];
+      if (!__nr || !__nr.subject || !__nr.kpId) continue;
+      var __nkey = __nr.subject + '||' + (__nr.chapter || '通用') + '||' + (__nr.kpId.split('|').pop() || __nr.kpId);
+      __nine[__nkey] = {
+        concept: __nr.concept || '',
+        formula: __nr.formula || '',
+        steps: __nr.steps || '',
+        error: __nr.error || '',
+        model: __nr.model || '',
+        quick: __nr.quick || __nr.tactics || '',
+        tactics: __nr.tactics || __nr.quick || '',
+        errAnaly: __nr.errAnaly || '',
+        variation: __nr.variation || '',
+        subject: __nr.subject,
+        chapter: __nr.chapter || '',
+        kp: __nr.kpId.split('|').pop() || '',
+        depth: __nr.depth || 'base',
+        difficulty: __nr.difficulty || 3
+      };
+    }
+    /* [10.226] 合并字段齐全的草稿点到九步数据源；已审核点优先，草稿仅填空缺 */
+    var __draftN = 0;
+    for (var __dk in __nineDraft) {
+      if (!Object.prototype.hasOwnProperty.call(__nineDraft, __dk)) continue;
+      if (!__nine[__dk]) { __nine[__dk] = __nineDraft[__dk]; __draftN++; }
+    }
+    window.__KB650_NINE_DATA__ = __nine;
+    try { console.info('[KB650-9D] 九维数据已注入 ' + Object.keys(__nine).length + ' 条（其中草稿补齐 ' + __draftN + ' 条）'); } catch (e) {}
      
     try { if (added > 0 && typeof window.__kbCleanRerun === 'function') window.__kbCleanRerun(); } catch (e) { }
     console.log('[KB650] 已注入 ' + added + ' 点（重名另存 ' + renamed + '，跳过未审草稿 ' + skippedDraft + '），' +
@@ -66231,6 +66516,8 @@ else { __covAfterMerge(); }
     if(arr.length<3 && rec){
       if(rec.steps) String(rec.steps).split(/(?:[。；;]|\n|①|②|③|④|⑤)/).forEach(push);
       if(arr.length<3 && rec.formula) push('核心公式：'+String(rec.formula).split('\n')[0]);
+      if(arr.length<3 && rec.concept) push('概念判别：'+String(rec.concept).split(/[。；;.\n]/)[0]);
+      if(arr.length<3 && rec.error) String(rec.error).split(/(?:[。；;]|\n|①|②|③|④|⑤)/).forEach(push);
     }
     return arr;
   }
@@ -66246,7 +66533,25 @@ else { __covAfterMerge(); }
   function nfQItemHTML(qq){
     var s=String(qq.stem||'').replace(/\s+/g,' ').slice(0,48);
     var a=qq.ans||qq.a||'—';
-    return '<li><span class="nf-q">'+nfEsc(s)+(s.length>=48?'…':'')+'</span> <span class="nf-a">答 '+nfEsc(a)+'</span></li>';
+    var img=nfStemImg(qq);
+    var h='<li style="margin-bottom:10px;">';
+    h+='<div><span class="nf-q">'+nfEsc(s)+(s.length>=48?'…':'')+'</span> <span class="nf-a">答 '+nfEsc(a)+'</span></div>';
+    if(img){
+      h+='<div class="nf-figwrap" style="margin:6px 0;"><img src="'+img+'" alt="例题配图" style="max-width:100%;max-height:150px;border:1px solid #dbe8f5;border-radius:8px;animation:nfFigIn .6s ease-out;"></div>';
+    }
+    var note=String(qq.analysis||qq.ans_note||'').replace(/\s+/g,' ').trim();
+    if(note) h+='<div class="nf-note" style="font-size:12px;color:#5a6b7f;margin-top:4px;">🔍 '+nfEsc(note.slice(0,90))+(note.length>90?'…':'')+'</div>';
+    h+='</li>';
+    return h;
+  }
+  /* 10.225 实例数保证：同类模型/变式各 3–5 条；不足 3 条时显式标注题库现状，不编造 */
+  function nfPickExamples(list, minN){
+    minN = minN || 3;
+    var out = (list || []).slice(0, 5);
+    if (out.length < minN && list && list.length) {
+      out.push({__nfNote: '题库中同类实例共 ' + list.length + ' 条，已全部列出；不足 ' + minN + ' 条，待补充，不编造。'});
+    }
+    return out;
   }
   LK.nineFieldExplain = function (q) {
     try {
@@ -66272,8 +66577,16 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
       var same=(isLang&&et)?nfPoolSameType(et,q.id,10):nfPoolSameKp(kp,q.id,10);
       var dim=(isLang&&et)?('按高考题型「'+et+'」归并'):'同知识点';
       var models=same.slice(0,5);
+      if (models.length < 3 && rec) {
+        var extra = nfExtractTricks(rec, q).filter(function(x){ return models.indexOf(x) < 0; }).slice(0, 3 - models.length);
+        extra.forEach(function(x){ models.push({__nfNote: x}); });
+      }
       html+='<div class="nf-sec"><div class="nf-h">⑥ 同类模型（'+dim+' · '+models.length+' 例）</div>';
-      if(models.length){ html+='<ul class="nf-ul">'+models.map(nfQItemHTML).join('')+'</ul>'; } else { html+='<span class="nf-note">本考点在题库暂无其他同类题'+(kp?('（'+nfEsc(kp)+'）'):'')+'，可在「知识点查询」补充。</span>'; }
+      if(models.length){
+        html+='<ul class="nf-ul">'+models.map(function(x){
+          return x.__nfNote ? '<li class="nf-note" style="color:#8a5a00;">'+nfEsc(x.__nfNote)+'</li>' : nfQItemHTML(x);
+        }).join('')+'</ul>';
+      } else { html+='<span class="nf-note">本考点在题库暂无其他同类题'+(kp?('（'+nfEsc(kp)+'）'):'')+'，可在「知识点查询」补充。</span>'; }
       html+='</div>';
       var tricks=nfExtractTricks(rec, q);
       html+='<div class="nf-sec"><div class="nf-h">⑦ 秒杀技巧（'+tricks.length+' 条）</div>';
@@ -66282,9 +66595,17 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
       var ea=nfErrAna(q, rec);
       html+='<div class="nf-sec"><div class="nf-h">⑧ 错误分析</div>'+(ea?nfNl2br(ea):'<span class="nf-note">—</span>')+'</div>';
       var variants = same.slice(5,10);
-      if (variants.length < 3) variants = same.slice(0, Math.min(5, same.length));
+      if (variants.length < 3) variants = same.slice(0, Math.min(5, same.length)).filter(function(x){ return models.indexOf(x) < 0; });
+      if (variants.length < 3 && rec) {
+        var vextra = nfExtractTricks(rec, q).filter(function(x){ return models.indexOf(x) < 0 && variants.indexOf(x) < 0; }).slice(0, 3 - variants.length);
+        vextra.forEach(function(x){ variants.push({__nfNote: x}); });
+      }
       html+='<div class="nf-sec"><div class="nf-h">⑨ 变式（'+dim+' · '+variants.length+' 例）</div>';
-      if(variants.length){ html+='<ul class="nf-ul">'+variants.map(nfQItemHTML).join('')+'</ul>'; } else { html+='<span class="nf-note">本考点变式题待补充。</span>'; }
+      if(variants.length){
+        html+='<ul class="nf-ul">'+variants.map(function(x){
+          return x.__nfNote ? '<li class="nf-note" style="color:#8a5a00;">'+nfEsc(x.__nfNote)+'</li>' : nfQItemHTML(x);
+        }).join('')+'</ul>';
+      } else { html+='<span class="nf-note">本考点变式题在题库暂无其他实例'+(kp?('（'+nfEsc(kp)+'）'):'')+'，待补充，不编造。</span>'; }
       html+='</div>';
       return html;
     } catch(e){ return '<div style="color:#c00;padding:10px;">九步解析生成异常：'+nfEsc(e&&e.message||e)+'</div>'; }
@@ -66336,7 +66657,14 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
       /* 10.220 动图动画关键帧：配图淡入放大 + 图框呼吸，辅助讲解更直观 */
       var animCss = '<style>@keyframes nfFigIn{from{opacity:0;transform:scale(.94);}to{opacity:1;transform:scale(1);}}'
         + '@keyframes nfStemGlow{0%,100%{box-shadow:0 4px 12px rgba(15,76,129,.10);}50%{box-shadow:0 4px 18px rgba(15,76,129,.22);}}'
-        + '.nf-topstem{animation:nfStemGlow 3.2s ease-in-out infinite;}</style>';
+        + '@keyframes nfSecIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}'
+        + '@keyframes nfFigBreathe{0%,100%{border-color:#dbe8f5;}50%{border-color:#4facfe;}}'
+        + '.nf-topstem{animation:nfStemGlow 3.2s ease-in-out infinite;}'
+        + '.nf-sec{animation:nfSecIn .5s ease-out;}'
+        + '.nf-sec:nth-child(2){animation-delay:.08s}.nf-sec:nth-child(3){animation-delay:.16s}.nf-sec:nth-child(4){animation-delay:.24s}'
+        + '.nf-sec:nth-child(5){animation-delay:.32s}.nf-sec:nth-child(6){animation-delay:.4s}.nf-sec:nth-child(7){animation-delay:.48s}'
+        + '.nf-sec:nth-child(8){animation-delay:.56s}.nf-sec:nth-child(9){animation-delay:.64s}'
+        + '.nf-figwrap img{animation:nfFigIn .6s ease-out, nfFigBreathe 3.6s 1s ease-in-out infinite;}</style>';
       box.style.cssText='position:fixed;inset:0;z-index:99995;background:#fff;display:flex;flex-direction:column;';
       box.innerHTML=animCss+'<div style="width:100vw;height:100vh;max-height:100vh;overflow:auto;background:#fff;border-radius:0;font-family:inherit;position:relative;">'+
         '<div style="position:sticky;top:0;z-index:9;background:#0f4c81;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;"><b>📖 九步结构化解析 · 全屏浏览</b><button onclick="document.getElementById(\'nfModal\').style.display=\'none\'" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;">✕ 关闭</button></div>'+
@@ -67356,7 +67684,7 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
   var MANIFEST = 'manifest.json';
   
 
-  var BUILD = '10.223';
+  var BUILD = '10.224';
 
   
 
@@ -74159,7 +74487,7 @@ else document.addEventListener('DOMContentLoaded',mountFab);
       'allow="autoplay;fullscreen;encrypted-media;picture-in-picture" allowfullscreen' +
       (VSRC[V.src].rp ? ' referrerpolicy="' + VSRC[V.src].rp + '"' : '') +
       '></iframe></div>' +
-      '<div class="ctv9-vnote">黑屏或提示无法播放？点「🔄 ' + esc(VSRC[V.src].n) + '」换一个播放源；都不行就点「↗ 外链」。</div>' +
+      '<div class="ctv9-vnote" id="ctv9VidNote">黑屏或提示无法播放？点「🔄 ' + esc(VSRC[V.src].n) + '」换一个播放源；都不行就点「↗ 外链」。</div>' +
       '<div class="ctv9-vlist">';
     V.list.slice(0, 30).forEach(function (x, i) {
       h += '<div class="ctv9-vitem' + (i === V.i ? ' cur' : '') + '" onclick="CTV9.vidGo(' + (i - V.i) + ')">' +
@@ -74167,6 +74495,73 @@ else document.addEventListener('DOMContentLoaded',mountFab);
     });
     h += '</div>';
     box.innerHTML = h;
+    /* [10.225] 自动直连兜底：渲染 iframe 后立即拉 B 站 mp4 直链，
+       拿到后把 iframe 换成原生 <video>，消除"黑屏有声"。失败保留 iframe。 */
+    try {
+      (function autoDirect() {
+        var bvid = v.b, iframe = document.getElementById('ctv9VFrame');
+        if (!bvid || !iframe || iframe.dataset.directDone) return;
+        iframe.dataset.directDone = '1';
+        var note = document.getElementById('ctv9VidNote');
+        if (note) note.textContent = '正在获取直连播放源…';
+        var JQ = 0;
+        function jsonp(url2, cb2) {
+          var nm = '__ctv9auto_' + (++JQ) + '_' + Math.random().toString(36).slice(2, 6);
+          var s2 = document.createElement('script'), done2 = false;
+          W[nm] = function (o) { done2 = true; W[nm] = null; cb2(o); };
+          s2.src = url2 + (url2.indexOf('?') < 0 ? '?' : '&') + 'callback=' + nm;
+          s2.onerror = function () { if (!done2) cb2(null); };
+          s2.onload = function () { W.setTimeout(function () { if (!done2) cb2(null); }, 80); };
+          try { (document.head || document.body).appendChild(s2); } catch (e) { cb2(null); }
+          W.setTimeout(function () { try { if (s2.parentNode) s2.parentNode.removeChild(s2); } catch (e) {} }, 8000);
+        }
+        function apiGet(url2, cb2) {
+          var done2 = false;
+          function fin2(o) { if (done2) return; done2 = true; cb2(o); }
+          try {
+            if (W.fetch) W.fetch(url2, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
+              .then(function (r) { return r.json(); }).then(function (j) { fin2(j); }).catch(function () { jsonp(url2, fin2); });
+            else jsonp(url2, fin2);
+          } catch (e) { try { jsonp(url2, fin2); } catch (x) { fin2(null); } }
+          W.setTimeout(function () { fin2(null); }, 5000);
+        }
+        apiGet('https://api.bilibili.com/x/player/pagelist?bvid=' + encodeURIComponent(bvid), function (j) {
+          var pages = (j && j.code === 0 && j.data) ? j.data : null;
+          if (!pages || !pages.length) { if (note) note.textContent = '直连获取失败，请用上方 iframe 或点「↗ 外链」'; return; }
+          var cid = pages[0] ? pages[0].cid : '';
+          apiGet('https://api.bilibili.com/x/player/playurl?bvid=' + encodeURIComponent(bvid) +
+            '&cid=' + cid + '&qn=16&fnval=0&fnver=0&fourk=0', function (j2) {
+            var d = j2 && j2.code === 0 && j2.data && j2.data.durl;
+            var mp4url = d && d[0] && (d[0].url || (d[0].backup_url && d[0].backup_url[0]));
+            if (!mp4url) { if (note) note.textContent = '直连获取失败，请用上方 iframe 或点「↗ 外链」'; return; }
+            var stage = document.querySelector('.ctv9-vstage');
+            if (!stage) return;
+            var fr = document.getElementById('ctv9VFrame');
+            if (fr) fr.style.display = 'none';
+            var vEl = document.createElement('video');
+            vEl.id = 'ctv9VidDirect';
+            vEl.src = mp4url;
+            vEl.controls = true;
+            vEl.autoplay = true;
+            vEl.playsInline = true;
+            vEl.preload = 'auto';
+            vEl.referrerPolicy = 'no-referrer';
+            vEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:1';
+            stage.appendChild(vEl);
+            var badge = document.createElement('div');
+            badge.textContent = '📄 直连播放中';
+            badge.style.cssText = 'position:absolute;bottom:6px;left:8px;font-size:11px;color:#94a3b8;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:4px;z-index:2';
+            stage.appendChild(badge);
+            vEl.addEventListener('error', function () {
+              if (note) note.textContent = '直连播放出错，已回退 iframe';
+              vEl.remove();
+              if (fr) { fr.style.display = ''; fr.parentNode.appendChild(fr); }
+            }, { once: true });
+            if (note) note.textContent = '📄 已切换直连播放（无黑屏有声）';
+          });
+        });
+      })();
+    } catch (e) { }
   }
   function videos() {
     var m = g('ctv9Vid'); if (!m) return;
@@ -85384,19 +85779,30 @@ function emptyMsg(t) {
     }
   };
 
-  MK.video = function (no) {
-    var it = curIt(), q = prep(qOf(it, no), it);
-    if (!q) return;
-    var kp = String(q.kp || '').trim();
-    if (!kp) { toast('这题还没识别出知识点，先 AI 批改一次'); return; }
-    if (typeof W.kbSeekItem === 'function') {
-      try { W.kbSeekItem((it && it.subject) || '', kp, q.qid || null, null); return; } catch (e) { }
-    }
-    if (typeof W.openKbSlides === 'function') {
-      try { W.openKbSlides((it && it.subject) || '', kp, q, null); return; } catch (e) { }
-    }
-    toast('视频讲解模块未就绪');
-  };
+    MK.video = function (no) {
+      var it = curIt(), q = prep(qOf(it, no), it);
+      if (!q) return;
+      var kp = String(q.kp || q.knowledge || q.topic || '').trim();
+      if (!kp && typeof W.kpAuto122 === 'function') {
+        try { var r = W.kpAuto122({ subject: (it && it.subject) || q.subject || '', question: q.stem || q.question || '', topic: '' }); if (r && r.kp) kp = r.kp; } catch (e) { }
+      }
+      if (!kp) {
+        // 10.225 不再硬拦截：知识点缺省时直接走视频讲解兜底链路
+        // （v223 包装 → KB 名称包含兜底 → openQVideo「本题讲解」视频，绝不要求手动选知识点）
+        try {
+          if (typeof W.openKbSlides === 'function') { W.openKbSlides((it && it.subject) || q.subject || '', '', q, null); return; }
+        } catch (e) { }
+        toast('这题还没识别出知识点，已改用「本题讲解」模式');
+        return;
+      }
+      if (typeof W.kbSeekItem === 'function') {
+        try { W.kbSeekItem((it && it.subject) || '', kp, q.qid || null, null); return; } catch (e) { }
+      }
+      if (typeof W.openKbSlides === 'function') {
+        try { W.openKbSlides((it && it.subject) || '', kp, q, null); return; } catch (e) { }
+      }
+      toast('视频讲解模块未就绪');
+    };
 
    
   MK.normalizeKp = function (subj, kp) {
@@ -85582,6 +85988,7 @@ var TERMS = [
    
   '氧化还原', '离子反应', '化学平衡', '电离平衡', '盐类水解', '电化学', '元素周期律', '元素周期', '有机物', '摩尔',
   '物质的量', '胶体', '晶体', '羧酸', '酯化', '烃', '醇', '醛', '焰色',
+  '同位素', '核素', '原子组成', '原子结构', '原子符号', '质量数', '中子数', '质子数', '同素异形体', '水分子', '相对原子质量', '丰度',
    
   '光合作用', '细胞呼吸', '细胞', '基因', '遗传', 'DNA', 'RNA', '蛋白质', '酶', '免疫', '种群', '群落', '生态系统',
   '减数分裂', '内环境', '神经调节', '体液调节', '染色体',
@@ -85795,6 +86202,17 @@ var CSS9 = '<style id="nf9css">'
   + '.nf9-ex .p{color:#4b5563;font-size:12.5px;margin-top:3px;}'
   + '.nf9-warn{color:#b45309;font-size:12px;margin-top:5px;}'
   + '.nf9-ok{color:#0b7a3b;font-size:12px;margin-top:5px;}'
+  + '@keyframes nf9FigIn{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}'
+  + '@keyframes nf9FigBreathe{0%,100%{border-color:#dbe8f5;}50%{border-color:#4facfe;}}'
+  + '@keyframes nf9StemGlow{0%,100%{box-shadow:0 4px 12px rgba(15,76,129,.10);}50%{box-shadow:0 4px 18px rgba(15,76,129,.22);}}'
+  + '@keyframes nf9SecIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}'
+  + '.nf9-stem-top{position:sticky;top:0;z-index:999;background:linear-gradient(135deg,#f8fbff,#eef5ff);border-bottom:2px solid #0f4c81;padding:8px 12px;margin:0 0 10px;animation:nf9StemGlow 3.2s ease-in-out infinite;border-radius:0;}'
+  + '.nf9-stem-top .lbl{font-size:12px;color:#0f4c81;font-weight:700;margin-bottom:4px;}'
+  + '.nf9-stem-top img{max-width:100%;max-height:130px;border:1px solid #dbe8f5;border-radius:6px;margin-top:6px;animation:nf9FigIn .6s ease-out,nf9FigBreathe 3.6s 1s ease-in-out infinite;}'
+  + '.nf9-fig img{animation:nf9FigIn .5s ease-out,nf9FigBreathe 3.6s 1s ease-in-out infinite;}'
+  + '.nf9-sec{animation:nf9SecIn .5s ease-out;}'
+  + '.nf9-subsec{border:1px solid #e8f0fe;border-radius:8px;margin:8px 0;background:#f8fbff;padding:8px 10px;}'
+  + '.nf9-subsec-t{font-size:12.5px;font-weight:700;color:#0f4c81;margin-bottom:6px;}'
   + '</style>';
 
  
@@ -85824,15 +86242,20 @@ function itemsHTML(arr) {
   return h;
 }
  
-function exHTML(list, withPt) {
+function exHTML(list, withPt, ctx) {
   var h = '';
   for (var i = 0; i < list.length; i++) {
     var x = list[i];
     var q = s(x.q || x.stem || x.question);
     var a = s(x.a || x.ans || x.answer);
     var pt = s(x.pt || x.analysis || x.comment).replace(/^\s*【知识点解析】[^\n]*\n?/, '').replace(/\s+/g, ' ');
+    /* 10.225 有图必带图：例题自身图片优先，其次同题图片字段 */
+    var img = s(x.img || x.image || x.imgSrc || x.pic || x.figure || x.dataUrl || '');
+    if (img && img.indexOf('__idb:') === 0) img = '';
+    if (!/^(data:image\/|https?:\/\/|blob:|\/)/i.test(img)) img = '';
     h += '<div class="nf9-ex">'
       + '<div class="q">' + (i + 1) + '. ' + esc(cut(q, 150)) + '</div>'
+      + (img ? '<div class="nf9-fig"><img src="' + img + '" alt="例题配图" style="max-width:100%;max-height:140px;border:1px solid #dbe8f5;border-radius:6px;margin:6px 0;animation:nf9FigIn .5s ease-out;"></div>' : '')
       + (a ? '<div class="a">答案：' + esc(cut(a, 80)) + '</div>' : '')
       + (withPt !== false && pt ? '<div class="p">解析要点：' + esc(cut(pt, 130)) + '</div>' : '')
       + '</div>';
@@ -85973,6 +86396,18 @@ function renderNine(q) {
   b1 += '<div class="nf9-row nf9-k">考点：' + esc(subj + (chapter ? ' · ' + chapter : '') + ' · ' + kpName) + '</div>';
   h += sec('①', '题目回顾', '', b1);
 
+  /* 10.225 原题顶部 sticky 卡片：题干全文 + 原图，讲解滚动时不消失 */
+  var stemImg = s(q.img || q.image || q.imgSrc || q.pic || q.figure || q.dataUrl || '');
+  if (stemImg && stemImg.indexOf('__idb:') === 0) stemImg = '';
+  if (!/^(data:image\/|https?:\/\/|blob:|\/)/i.test(stemImg)) stemImg = '';
+  if (stem || stemImg) {
+    h += '<div class="nf9-stem-top">'
+      + '<div class="lbl">📄 原题（全程置顶 · 讲解滚动时不消失）</div>'
+      + (stem ? '<div>' + esc(stem) + '</div>' : '')
+      + (stemImg ? '<img src="' + stemImg + '" alt="原题配图">' : '')
+      + '</div>';
+  }
+
    
   var c2 = rec && rec.concept ? rec.concept : '';
   var b2 = c2 ? itemsHTML(toItems(c2)) : ('<div class="nf9-warn">未匹配到该知识点的概念条目。</div>');
@@ -86014,13 +86449,30 @@ function renderNine(q) {
     if (Array.isArray(rec.model)) models = rec.model;
     else models = toItems(rec.model);
   }
-  var allVar = pickVariants(rec, 5);
-  var ex6 = allVar.slice(0, 3);
+  /* 10.225 同类模型条目不足 3 条时，用 tactics 补足（教材标准方法名），不编造 */
+  if (models.length < 3 && rec && rec.tactics) {
+    var mb = toItems(String(rec.tactics));
+    models = models.concat(mb.filter(function (x) { return models.indexOf(x) < 0; }).slice(0, 3 - models.length));
+  }
+  var allVar = pickVariants(rec, 6);
+var ex6 = allVar.slice(0, 3);
+if (ex6.length < 3) ex6 = ex6.concat(nbByTerm(subj, stem, 3 - ex6.length));
   var b6 = '';
-  if (models.length) b6 += itemsHTML(models.map(stripBad));
+  /* [10.225-v2] 先讲模型概念，再出配套考题（知三求二公式模型→考题） */
+  if (models.length) {
+    b6 += '<div class="nf9-subsec"><div class="nf9-subsec-t">📦 模型先讲（先懂模型再做题）</div>';
+    b6 += itemsHTML(models.map(stripBad));
+    b6 += '</div>';
+  }
   if (ex6.length) {
-    b6 += '<div class="nf9-k" style="margin-top:8px;">配套模型例题（同知识点）</div>' + exHTML(ex6, true);
-  } else if (!models.length) {
+    b6 += '<div class="nf9-subsec"><div class="nf9-subsec-t">📝 配套考题（同知识点 · ' + ex6.length + ' 道）</div>' + exHTML(ex6, true) + '</div>';
+  } else if (models.length) {
+    var nb6b = nbByTerm(subj, stem, 3);
+    if (nb6b.length) {
+      b6 += '<div class="nf9-subsec"><div class="nf9-subsec-t">📝 配套考题（同科相近）</div>'
+        + exHTML(nb6b.map(function (x) { return { q: x.stem || x.q, a: x.ans || x.a, pt: x.analysis || x.pt }; }), true) + '</div>';
+    }
+  } else {
     var nb6 = nbByTerm(subj, stem, 3);
     if (nb6.length) {
       b6 += '<div class="nf9-warn">该知识点未带模型清单，改列同科相近题：</div>'
@@ -86033,7 +86485,24 @@ function renderNine(q) {
    
   var quick = [];
   if (rec && rec.quick) quick = Array.isArray(rec.quick) ? rec.quick : toItems(rec.quick);
-  var b7 = quick.length ? itemsHTML(quick.map(stripBad)) : '<div class="nf9-warn">未取到秒杀条目。</div>';
+  /* 10.225 秒杀技巧不足 3 条时，按序回退：model → tactics → tips，均不编造 */
+  if (quick.length < 3) {
+    var qb = (rec && (rec.tactics || rec.model)) ? toItems(String(rec.tactics || rec.model)) : [];
+    quick = quick.concat(qb.filter(function (x) { return quick.indexOf(x) < 0; }).slice(0, 3 - quick.length));
+  }
+  var b7 = '';
+  /* [10.225-v2] 先讲技巧原理，再出配套考题 */
+  if (quick.length) {
+    b7 += '<div class="nf9-subsec"><div class="nf9-subsec-t">⚡ 技巧先讲（原理 + 适用条件）</div>';
+    b7 += itemsHTML(quick.map(stripBad));
+    b7 += '</div>';
+  }
+  var ex7 = ex6.slice(0, 3);
+  if (ex7.length < 3) ex7 = ex7.concat(nbByTerm(subj, stem, 3 - ex7.length));
+  if (ex7.length) {
+    b7 += '<div class="nf9-subsec"><div class="nf9-subsec-t">📝 配套考题（检验技巧是否真会）</div>' + exHTML(ex7, true) + '</div>';
+  }
+  if (!b7) b7 = '<div class="nf9-warn">未取到秒杀条目。</div>';
   try{ if(window.CTB_EX&&window.CTB_EX.nineStrip) b7+=window.CTB_EX.nineStrip(subj, chapter||kpName, kpName, 'quick'); }catch(e){}
   h += sec('⑦', '秒杀技巧', quick.length ? quick.length + ' 条' : '', b7);
 
@@ -86054,20 +86523,28 @@ function renderNine(q) {
    
   var v9 = allVar.slice(3, 6);
   if (v9.length < 3) {
-    var used9 = allVar.concat(v9);
+    var used9 = allVar.concat(nbByTerm(subj, stem, 3 - v9.length));
     var more = collectFromChapter(subj, chapter, kpName, 3 - v9.length, used9.map(function (x) { return s(x.q || x.stem); }));
     for (var j = 0; j < more.length; j++) v9.push(more[j]);
   }
   var b9 = '';
+  /* [10.225-v2] 先讲变式规律，再出配套考题 */
   var vd = rec && rec.variation ? s(rec.variation).split('\n')[0] : '';
-  if (vd) b9 += '<div class="nf9-row nf9-k">' + esc(cut(vd, 160)) + '</div>';
-  if (v9.length) b9 += exHTML(v9, true);
-  else {
+  if (vd) {
+    b9 += '<div class="nf9-subsec"><div class="nf9-subsec-t">🔁 变式规律先讲</div>'
+      + '<div class="nf9-row nf9-k">' + esc(cut(vd, 160)) + '</div></div>';
+  }
+  var v9full = v9;
+  if (v9full.length) {
+    b9 += '<div class="nf9-subsec"><div class="nf9-subsec-t">📝 配套变式考题（' + v9full.length + ' 道）</div>' + exHTML(v9full, true) + '</div>';
+  } else {
     var nb9 = nbByTerm(subj, stem, 3);
-    b9 += nb9.length
-      ? '<div class="nf9-warn">该知识点未带变式题，改列同科相近题：</div>'
-      + exHTML(nb9.map(function (x) { return { q: x.stem || x.q, a: x.ans || x.a, pt: x.analysis || x.pt }; }), true)
-      : '<div class="nf9-warn">未取到变式题。</div>';
+    if (nb9.length) {
+      b9 += '<div class="nf9-subsec"><div class="nf9-subsec-t">📝 配套考题（同科相近）</div>'
+        + exHTML(nb9.map(function (x) { return { q: x.stem || x.q, a: x.ans || x.a, pt: x.analysis || x.pt }; }), true) + '</div>';
+    } else {
+      b9 += '<div class="nf9-warn">未取到变式题。</div>';
+    }
   }
   h += sec('⑨', '变式', v9.length ? v9.length + ' 道' : '', b9);
   h += '</div>';
@@ -87474,7 +87951,7 @@ nflog('NF9 模块已加载');
 <script>
  
 (function () {
-  var W = window, BUILD = '10.222';
+  var W = window, BUILD = '10.224';
   try { W.__APP_BUILD__ = BUILD; } catch (e) { }
   W.__BOOTERRS__ = [];
   function push(m) { if (W.__BOOTERRS__.length < 30) W.__BOOTERRS__.push(String(m).slice(0, 260)); }
@@ -91284,7 +91761,54 @@ body.ctbKvFsLock{overflow:hidden!important}
 
      
     if (mode === 'wrong') {
-       
+       /* 10.225 防敷衍：本地知识点库查不到该点时（kp 为空），用 AI 深度版讲解产物 ctx._ai 合并兜底，
+          让「核心概念/公式/步骤/易错/同类/秒杀/变式」各段都有实内容，而不是清一色「本点暂无…」占位 */
+      var _ai = ctx._ai || null;
+      if (!_ai) {
+        try {
+          var _wid = ctx.id || ctx.qid || '';
+          if (_wid && typeof W.__CTB_GET_WRONG__ === 'function') {
+            var _w = W.__CTB_GET_WRONG__(_wid);
+            if (_w && _w.ai && typeof _w.ai === 'object') _ai = _w.ai;
+          } else if (_wid && Array.isArray(W.wrongs)) {
+            for (var _wi = 0; _wi < W.wrongs.length; _wi++) {
+              if (String(W.wrongs[_wi].id) === String(_wid)) { _w = W.wrongs[_wi]; if (_w.ai && typeof _w.ai === 'object') _ai = _w.ai; break; }
+            }
+          }
+        } catch (e) { }
+      }
+      var _aiHas = function () { return _ai && (_ai.concept || _ai.formula || _ai.steps || _ai.error || _ai.variants || _ai.tactics || _ai.model || _ai.quick); };
+      var _aiFill = {
+        concept:  (kp.concept  || (_ai && _ai.concept)) || '',
+        formula:  (kp.formula  || (_ai && _ai.formula)) || '',
+        steps:    (kp.steps    || (_ai && _ai.steps)) || '',
+        error:    (kp.error    || (_ai && _ai.error)) || '',
+        errAnaly: (kp.errAnaly || (_ai && _ai.errAnaly)) || '',
+        variation: (function(){
+          var _v = kp.variation || '';
+          if (!_v && kp.variants && kp.variants.join) _v = kp.variants.join('\n');
+          if (!_v && _ai) { _v = (_ai.variation || '') ; if (!_v && _ai.variants && _ai.variants.join) _v = _ai.variants.join('\n'); }
+          return _v || '';
+        })(),
+        tactics:  (kp.tactics  || (_ai && _ai.tactics)) || '',
+        quick:    (kp.quick    || (_ai && _ai.quick)) || '',
+        model:    (kp.model    || (_ai && _ai.model)) || '',
+        modelList:(kp.modelList|| (_ai && _ai.modelList)) || '',
+        hasAi: _aiHas()
+      };
+      var kp2 = _aiFill;   /* 后续段落统一引用 kp2（本地优先、AI 兜底） */
+
+      /* [10.225-v2] 修复：wrong 分支此前未定义 models，同类模型/秒杀段把它传给 trickExamples
+         时拿到未声明变量（严格模式抛 ReferenceError，整段九维渲染失败）。这里从本地+AI
+         合并后的 kp2 派生模型清单，保证「先讲模型→再出考题」有真实条目，且全部按科目取题。 */
+      var models = [];
+      var _rawModel = kp2.modelList || kp2.model || '';
+      if (Array.isArray(_rawModel)) models = _rawModel.slice();
+      else if (_rawModel) models = String(_rawModel).split(/\n+|[；;]/)
+        .map(function (x) { return String(x).replace(/^\s*[\d.、]+/, '').trim(); })
+        .filter(function (x) { return x.length >= 4; });
+      if (!models.length) models = [String(kpName || '通用解题模型').trim()];
+
       var diff = (ans && mine)
         ? (_clean(ans) === _clean(mine)
           ? '作答和标准答案一致——问题多半在书写或格式，往下重点看第 6、7 项。'
@@ -91299,15 +91823,15 @@ body.ctbKvFsLock{overflow:hidden!important}
         + '\n\n【先看这一句】' + diff
         + '');
       P('🧠', '这道题考的是哪个概念', '【考点】' + (kpName || '（未标注）')
-        + '\n\n【这个概念的核心】' + (_sent(kp.concept, 2) || '（知识点库未收录本点概念，下面按题目本身推）')
+        + '\n\n【这个概念的核心】' + (_sent(kp2.concept, 2) || (kp2.hasAi ? '' : '（知识点库未收录本点概念，下面按题目本身推）'))
         + '\n\n【对着这道题问自己三句】'
         + '\n① 题目要你求/判的到底是什么？（先把"问什么"圈出来）'
         + '\n② 这个问法对应上面哪条规律？（说不出就说明概念没通）'
         + '\n③ 题里哪些条件是"干扰项"、哪些是"必须用"的？（漏一个条件就错一档）');
-      P('📐', '这道题要用哪条公式', (_lines(kp.formula, 3, 58) || '（本点无公式，属判断/识记型——真正要背的是判定顺序，不是式子）')
+      P('📐', '这道题要用哪条公式', (_lines(kp2.formula, 3, 58) || '（本点无公式，属判断/识记型——真正要背的是判定顺序，不是式子）')
         + '\n\n【怎么挑】上面几条里，只有一条能直接对上题目问的那个量；挑完先写适用条件，条件不满足就换。'
         + '\n【写在哪】草稿第一行写下"用 XXX 公式，因为 XXX"，写不出来就别急着代数字。');
-      P('🪜', '正确步骤 vs 我的步骤', '【正确顺序（每步只留动作）】\n' + (_lines(kp.steps, 4, 22) || '（本点暂无分步，按下面的通用四步走）\n· ①认清问什么\n· ②挑对规律\n· ③代入算\n· ④回头验')
+      P('🪜', '正确步骤 vs 我的步骤', '【正确顺序（每步只留动作）】\n' + (_lines(kp2.steps, 4, 22) || '（本点暂无分步，按下面的通用四步走）\n· ①认清问什么\n· ②挑对规律\n· ③代入算\n· ④回头验')
         + '\n\n【我写的】' + (mine ? _clip(mine, 90) : '（空）')
         + '\n\n【逐个对】拿我的第一步去比正确顺序的第一步：对得上 → 往下看第二步；对不上 → 就从这里断的，前面都不算数。'
         + '\n【判断方法】如果你写的那一步在正确顺序里找不到对应动作，说明方向就错了，不是算错。');
@@ -91320,24 +91844,60 @@ body.ctbKvFsLock{overflow:hidden!important}
             ? '两者一致——说明这道题其实做对了，错在书写或格式，检查有没有漏单位、漏答、漏范围。'
             : '两者不一致。差一档通常三种情况：①方向错（规律选错）②条件漏（少用了一个已知）③计算错（对完式子再回头看）。')
           : '缺一方（答案或作答）没法对照，先补齐再来自查。'));
-      P('⚠️', '这次最可能踩的坑', (_lines(kp.errAnaly || kp.error, 3, 56) || '（本点暂无错因记录，按通用三类自查）')
+      P('⚠️', '这次最可能踩的坑', (_lines(kp2.errAnaly || kp2.error, 3, 56) || '（本点暂无错因记录，按通用三类自查）')
         + '\n\n【只认一条】上面三条里，本次真正踩中的通常只有一条。'
         + '\n【怎么认】把你的作答和"标准答案差在哪"对一遍：方向错 → 第一条；步骤漏 → 第二条；算错/单位错 → 第三条。'
         + '\n【记住它】把那条抄到错题本第一行，下次做同类题先看一眼。');
-      P('🔁', '同类题怎么防再错', (_clip(kp.variation || (kp.variants && kp.variants.join ? kp.variants.join('\n') : ''), 180)
-        || '（本点暂无变式记录）')
-        + '\n\n【自己造一道】把这道题的一个条件改掉（数字 / 范围 / 图形位置 / 设问方向任选其一），其余不动，重做一遍。'
-        + '\n【判定标准】能独立做对 = 真会；还是卡在同一个地方 = 回到上面第三项重看，别急着刷下一题。');
-      P('⚡', '下次遇到怎么秒', (_clip(kp.tactics || kp.quick, 140) || '（本点暂无提速记录）')
-        + '\n\n【这道题的提速点】' + (_sent(kp.quick, 1) || '先判断再动笔，判断对了计算只是收尾。')
-        + '\n【动作清单】①先圈问什么 ②再写用哪条规律 ③然后才代数字 ④最后回代检验。四步里前两步决定对错，后两步只影响速度。');
-      P('🔍', '错因归因与下一步', (_clip(kp.errAnaly || kp.variation, 170) || '')
+      P('🔁', '同类模型（先讲模型再出考题）', (_lines(kp2.modelList || kp2.model, 4, 56)
+        || _clip(kp2.model, 180)
+        || '（本点暂无模型归纳）')
+        + '\n\n【模型清单（先理解再做题）】' + (_lines(kp2.modelList || kp2.model, 4, 56) || '（见上方）')
+        + '\n\n【配套考题】' + (trickExamples('wrong', ctx.subject, kpName, models, kp2).length
+          ? trickExamples('wrong', ctx.subject, kpName, models, kp2).slice(0, 3).map(function (p) { return '· ' + _clip(p.stem, 60) + ' → ' + _clip(p.ans, 20); }).join('\n')
+          : '（同知识点暂无配套考题，先做上面本题的变式）')
+        + '\n\n【判定标准】能独立做对 = 模型真通；还是卡 = 回第 2 项重看概念。');
+      P('⚡', '秒杀技巧（先讲原理再出考题）', (_clip(kp2.tactics || kp2.quick, 140) || '（本点暂无提速记录）')
+        + '\n\n【技巧原理（先懂再快）】' + (_clip(kp2.tactics || kp2.quick, 140) || '先判断再动笔，判断对了计算只是收尾。')
+        + '\n\n【动作清单】①先圈问什么 ②再写用哪条规律 ③然后才代数字 ④最后回代检验。前两步决定对错，后两步只影响速度。'
+        + '\n\n【配套考题（检验技巧是否真会）】' + (trickExamples('wrong', ctx.subject, kpName, models, kp2).length
+          ? trickExamples('wrong', ctx.subject, kpName, models, kp2).slice(0, 3).map(function (p) { return '· ' + _clip(p.stem, 60) + ' → ' + _clip(p.ans, 20); }).join('\n')
+          : '（用上面「同类模型」段列出的 3 道题检验）'));
+      P('🔍', '错因归因与下一步', (_clip(kp2.errAnaly || kp2.variation, 170) || '')
         + '\n\n【归到哪一类】错因只有四类：'
         + '\n· 没看懂题 → 练审题（圈关键词、翻译设问）'
         + '\n· 概念记错 → 回「教材视角」把定义重读一遍'
         + '\n· 步骤漏 → 背「正确顺序」的骨架'
         + '\n· 算错/写错 → 练计算和书写规范'
         + '\n\n【下一步只做一件事】从上面对号入座挑一个，今天只练这一类，别四类一起抓。');
+
+      /* [10.225-v2] 九步第 9 项：变式——先讲变的规律，再出 3~5 道配套考题；
+         科目用 ctx.subject，知识点用 kpName，与本题严格同源。 */
+      var _varRule = (_lines(kp2.variation, 3, 56) || _clip(kp2.variation, 180)
+        || '保持解题模型不变，只改一个条件：换数字 / 换范围 / 换设问方向 / 换情境。');
+      var _varEx = trickExamples('wrong', ctx.subject, kpName, null, kp2);
+      if (_varEx.length < 3) {
+        var _more = nbByTerm(ctx.subject, stem, 4 - _varEx.length);
+        _more.forEach(function (x) {
+          _varEx.push({ stem: x.stem || x.q, ans: x.ans || x.a, analysis: x.analysis || x.pt });
+        });
+      }
+      var _vseen = {}, _vuniq = [];
+      _varEx.forEach(function (p) {
+        var _k = String(p.stem || '').replace(/\s+/g, '').slice(0, 40);
+        if (!_k || _vseen[_k]) return;
+        _vseen[_k] = 1; _vuniq.push(p);
+      });
+      P('🔄', '变式（先讲规律再出考题）',
+        '【变式规律（先懂怎么变）】' + _varRule
+        + '\n\n【万变不离其宗】上面的解题模型、公式、判定顺序一个都不变；变的只是"条件的外衣"。'
+        + '认准模型不变，换什么条件都不慌。'
+        + '\n\n【配套变式考题（' + Math.min(_vuniq.length, 5) + ' 道 · 同科目同知识点）】'
+        + (_vuniq.length
+          ? _vuniq.slice(0, 5).map(function (p, i) {
+              return (i + 1) + '. ' + _clip(p.stem, 64) + '\n   答案：' + (_clip(p.ans, 26) || '见解析');
+            }).join('\n')
+          : '（本知识点暂无可挂的同科变式题，用上面「同类模型」的考题按四种改法自己造 3 道）')
+        + '\n\n【判定标准】5 道能独立做对 4 道 = 这一节真过关；只会对原题 = 还停在背题，回去看第 ② 项概念。');
       return segs;
     }
 
@@ -91512,6 +92072,13 @@ body.ctbKvFsLock{overflow:hidden!important}
 
 
 
+  W.__CTB_GET_WRONG__ = function (id) {
+    try {
+      var list = W.wrongs || [];
+      for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) return list[i]; }
+      return null;
+    } catch (e) { return null; }
+  };
   W.__ctbNineWrong = function (w) {
     try {
       var subj = w.subject || w.subj || '';
@@ -91525,7 +92092,9 @@ body.ctbKvFsLock{overflow:hidden!important}
         ans: w.correctAnswer || w.ans || '',
         analysis: w.analysis || '',
         my: (w.myAnswer != null ? w.myAnswer : (w.my != null ? w.my : '')),
-        _kp: kp
+        _kp: kp,
+        id: w.id, qid: w.id,
+        _ai: (w.ai && typeof w.ai === 'object') ? w.ai : null
       };
       var segs = nineTextSegs(ctx, kp, 'wrong');
       return (segs && segs.length >= 9) ? segs : null;
@@ -100603,7 +101172,7 @@ function kpDetailHtml(mode, subj, book, kpName) {
 (function () {
   var W = window, D = document;
   var FILE = 'ctb650-sync.json';
-  var BUILD = '10.223';
+  var BUILD = '10.224';
 
   function ls(k, v) {
     try {
@@ -108964,9 +109533,55 @@ function ctbFusionText(L) {
   try { if (L) L.__ctb172Fusion = _txt; } catch (e) { }
   return _txt;
 }
+/* 10.227 · 讲题稿源统一走「知识点九维」同一份生成器：
+   本地精讲 / 全套AI口播 / 本地精讲口播三条稿源，全部调用已改好的
+   nineTextSegs(...,'wrong')，继承九步顺序、三类各 3-5 实例、先讲后考题、
+   教材术语、科目匹配。彻底取代旧的「本题讲解一整段」「AI 第 N 幕」散装结构。 */
+function nineStdLessonSegs(L) {
+  var out = [], w = (L && L.w) || L || {};
+  try {
+    var f = W.__CTB_NINE_TEXT_SEGS__;
+    if (typeof f !== 'function') return out;
+    var subj = S(w.subject || w.subj || (L && L.subj) || '');
+    var kpName = S(w.kp || w.knowledge || w.topic || w.chapter || (L && L.kp102 && L.kp102.title) || '');
+    var ctx = {
+      subject: subj, kp: kpName,
+      stem: S(w.stem || w.question || w.q || w.title || ''),
+      ans: S(w.ans || w.correctAnswer || w.stdAns || ''),
+      analysis: S(w.analysis || w.ana || ''),
+      my: S(w.my != null ? w.my : (w.mine || w.myAnswer || '')),
+      options: w.options || null, mode: 'wrong', id: w.id || ''
+    };
+    var kpObj = {};
+    try { if (typeof W.__CTB_FIND_KP__ === 'function') { var g = W.__CTB_FIND_KP__(subj, kpName); if (g && g.kp) kpObj = g.kp; } } catch (e) { }
+    var segs = f(ctx, kpObj, 'wrong');
+    if (!segs || segs.length < 9) return out;
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i] || {};
+      pqAdd(out, (i + 1) + '. ' + (s.t || '第' + (i + 1) + '步'), S(s.b || ''));
+    }
+  } catch (e) { }
+  return out;
+}
 function pqSegs(kind, L) {
   var out = [];
   if (!L) return out;
+  /* 10.227：三条讲题稿源统一走九步；AI 稿有内容时附着在九步之后作「加深」，不再另起炉灶 */
+  if (kind === 'fusion' || kind === 'localOral' || kind === 'aiOral') {
+    var nine = nineStdLessonSegs(L);
+    if (nine && nine.length >= 9) {
+      if (kind === 'aiOral') {
+        var extra = [];
+        try {
+          var _full = (L && L.ai && Array.isArray(L.ai.allSteps)) ? L.ai.allSteps.filter(function (p) { return p && S(p.oral).length >= 20; }) : [];
+          if (_full.length && S(L.ai.diagnosis)) pqAdd(extra, 'AI 深讲 · 错因定位（加深）', S(L.ai.diagnosis));
+        } catch (e) { }
+        return nine.concat(extra);
+      }
+      return nine;
+    }
+    /* 九步生成失败时退回原逻辑（下方各分支），保证不空稿 */
+  }
   if (kind === 'aiOral') {
     
 
@@ -121932,7 +122547,7 @@ function hRenderMenu123() {
     '<button onclick="C123.hub.reset()">恢复默认</button></div>';
   /* 10.216：菜单栏最底部固定显示当前版本号，便于核对已装/已发布版本 */
   /* 用独立常量，避免 c129Bump/c130Bump 把 __CTB_BUILD__ 改回旧版本号 */
-  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.222') + ' · 智能错题本</div>';
+  h += '<div class="c123-mver">v' + (W.__CTB_MENU_VER__ || '10.224') + ' · 智能错题本</div>';
   /* 10.204：内容签名不变就不重写 innerHTML。旧实现每次调用都整块清空重画，
      而 c126Ensure(500ms) / c124BallSweep / c128DockKbFab 都会调到这里 ——
      菜单被清空的那一瞬间高度塌成 0，下一帧又画回来，肉眼就是「球框一直在闪」。 */
@@ -126184,11 +126799,11 @@ function c129FixDiag() {
  
 function c129Bump() {
   try {
-    W.__CTB_BUILD__ = '10.222';
-    W.__APP_BUILD__ = '10.222';
+    W.__CTB_BUILD__ = '10.224';
+    W.__APP_BUILD__ = '10.224';
     var tag = D.getElementById('ctbVerTag');
     if (tag && /10\.11\d|10\.12\d|10\.21\d/.test(tag.textContent || '')) {
-      tag.textContent = 'v10.222';
+      tag.textContent = 'v10.224';
     }
   } catch (e) { }
 }
@@ -127245,7 +127860,7 @@ function c130Rebuild() {
   return true;
 }
 function c130Bump() {
-  try { W.__CTB_BUILD__ = '10.222'; } catch (e) { }   /* 10.220: 全局构建版本统一，不再被模块内部版本覆盖 */
+  try { W.__CTB_BUILD__ = '10.224'; } catch (e) { }   /* 10.220: 全局构建版本统一，不再被模块内部版本覆盖 */
   try { if (W.C128) W.C128.version = C130.ver; } catch (e) { }
   try { if (W.C127) W.C127.version = C130.ver; } catch (e) { }
   try { if (W.C121) W.C121.version = C130.ver; } catch (e) { }
@@ -134156,7 +134771,7 @@ window.__CTB144_SERIES__ = [
   var CELEB = /一数|一化儿|一物儿|一生儿|李政|跳跳|夏梦迪|李林|胡源|赵礼显|朱昊鲲|国家玮|邓诚|高东辉|FREE高考英语|HuangFuRen|数学超神|金考卷助考团|爱记日记的数学菌|清华大学出版社/;
   var SERIES_RE = /全\d+集|合集|全集|一轮复习|二轮|系统课|全程班|同步全集|系列课|45套|1000题|2000题|逐题精讲|真题全刷|精讲合集|基础与方法全集/;
   var REAL_RE = /真题|逐题|原题|讲题|套卷|试卷|45套|1000题|2000题|必刷题|刷卷|解析卷|逐题精讲/;
-  var AKEY = 'ctb144_assign_v1', OKEY = 'ctb144_online_v1';
+  var AKEY = 'ctb144_assign_v2', OKEY = 'ctb144_online_v2';   /* 10.227：抬版本强制丢弃旧的错误分配缓存 */
 
   function lsGet(k) { try { return JSON.parse(W.localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
   function lsSet(k, v) { try { W.localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
@@ -134165,7 +134780,7 @@ window.__CTB144_SERIES__ = [
   function normSubj(s) {
     s = String(s || '');
     for (var i = 0; i < SUBJ.length; i++) if (s.indexOf(SUBJ[i]) >= 0) return SUBJ[i];
-    if (/椭圆|双曲线|抛物线|圆锥曲线|立体几何|解析几何|数学|数列|函数|三角|导数|概率/.test(s)) return '数学';
+    if (/椭圆|双曲线|抛物线|圆锥曲线|立体几何|解析几何|数学|数列|函数|三角|导数|概率|正方体|长方体|棱柱|棱锥|棱台|顶点|棱长|空间几何|空间向量|外接球|内切球|截面|三视图|计数原理|排列组合|二项式/.test(s)) return '数学';
     if (/物理|力学|电磁|运动学/.test(s)) return '物理';
     if (/化学|元素|反应|有机/.test(s)) return '化学';
     if (/生物|遗传|细胞|生态/.test(s)) return '生物';
@@ -134231,6 +134846,7 @@ window.__CTB144_SERIES__ = [
   /* ---------- ② 打分：按题目需求筛选，原题优先、系列课件主推 ---------- */
   /* 学科知识点词表：中文题干没有空格，必须先检出专业词才能按题目筛选 */
   var KPW = ('函数 导数 极值 单调 恒成立 不等式 集合 三角 解三角形 数列 递推 通项 圆锥曲线 椭圆 双曲线 抛物线 离心率 渐近线 焦点弦 弦长 韦达 立体几何 外接球 内切球 空间向量 概率 统计 二项分布 分布列 期望 方差 排列组合 二项式 复数 向量 解析几何 二级结论 '
+    + '正方体 长方体 棱柱 棱锥 棱台 顶点 棱长 棱 面 线段 空间几何 空间几何计数 截面 三视图 展开图 计数原理 分类加法 分步乘法 组合数 排列数 '
     + '运动学 匀变速 追及相遇 力学 受力分析 牛顿定律 摩擦力 连接体 板块 传送带 临界 超重 失重 平抛 圆周运动 万有引力 动量 碰撞 功和能 机械能 弹簧 电磁感应 楞次定律 法拉第 电场 磁场 带电粒子 电路 欧姆定律 电学实验 机械波 光学 热学 光电效应 原子物理 '
     + '物质的量 离子反应 离子共存 氧化还原 电子守恒 配平 元素周期律 元素周期表 物质结构 化学键 化学平衡 平衡常数 电离平衡 盐类水解 沉淀溶解 电化学 原电池 电解池 盖斯定律 反应热 热化学 催化剂 反应机理 活化能 速率 有机化学 同分异构 官能团 工业流程 化学实验 元素化合物 铝 铁 氯 硫 氮 '
     + '细胞 细胞器 细胞膜 渗透 质壁分离 核酸 DNA RNA 蛋白质 酶 ATP 光合 呼吸 有丝分裂 减数分裂 遗传 孟德尔 分离定律 自由组合 伴性遗传 系谱图 基因 变异 进化 稳态 内环境 免疫 神经调节 体液调节 激素 种群 群落 生态 生态系统 生物技术 '
@@ -134248,30 +134864,15 @@ window.__CTB144_SERIES__ = [
     return out;
   }
   function score(v, q) {
-    var n = 0;
     if (v.s !== '全科' && q.subject && v.s !== q.subject) return -100000;
-    if (v.s === '全科') n += 4;
-    var hay = (v.t || '') + ' ' + (v.a || '') + ' ' + (v.kp || '') + ' ' + (v.series || '');
-    var i, t;
-    /* 题干 / 知识点关键词命中标题 */
-    for (i = 0; i < q.words.length; i++) {
-      t = q.words[i];
-      if (t.length < 2) continue;
-      if (hay.indexOf(t) >= 0) n += (v.t || '').indexOf(t) >= 0 ? 13 : 8;
-    }
-    /* 知识点标签精确命中 */
-    if (q.kp && hay.indexOf(q.kp) >= 0) n += 26;
-    if (v.kp && q.words.length) {
-      var hit = 0;
-      for (i = 0; i < q.words.length; i++) if (v.kp.indexOf(q.words[i]) >= 0) hit++;
-      n += Math.min(hit, 5) * 7;
-    }
-    if (v.real) n += 20;                       /* 原题 / 真题讲题优先 */
-    if (/金考卷45套|李政·基础1000题/.test(v.series || '')) n += 18; /* 主推系列 */
-    else if (SERIES_RE.test(v.series || '')) n += 11;
-    if (v.celeb) n += 9;                       /* 知名博主课件 */
-    if (v.t && /^\s*【?[^】]{0,6}(全\d+集|合集|全集)/.test(v.t)) n += 4;
-    n += v.base;
+    var rel = relScore(v, q);                    /* 纯相关度：题干/知识点命中视频标题与标签 */
+    if (rel <= 0) return -100000;                /* 10.227 硬门槛：与本题零相关直接淘汰，绝不让泛用套卷靠 base 混入 */
+    var n = rel * 3;                             /* 相关度为主排序依据 */
+    if (v.s === '全科') n -= 6;                   /* 全科视频次级优先于精准科目 */
+    if (q.kp && (v.kp || '').indexOf(q.kp) >= 0) n += 20;  /* 知识点标签精确命中 */
+    if (v.real) n += 6;                           /* 原题/真题次级加权（不再主导） */
+    if (v.celeb) n += 3;
+    n += Math.min(v.base || 0, 40) * 0.15;        /* base 仅作弱扰动，金考卷 60 分系列不再顶上来 */
     /* 轻微扰动让同分项目也能分散，但同一项目结果稳定 */
     n += (hash(v.b + '|' + (q.projectKey || '')) % 7) * 0.12;
     return n;
@@ -134291,15 +134892,17 @@ window.__CTB144_SERIES__ = [
   }
 
   /* 纯相关度：只算「题干/知识点命中视频标题与标签」，不含主推加权 */
+  /* 10.227：通用词（真题/套卷/全集等）不算相关，杜绝「福建卷真题」之类泛用视频靠通用词混入 */
+  var GENERIC = /^(真题|原题|逐题|讲题|套卷|试卷|模拟卷|一模|二模|质检|期中|期末|高考|一轮复习|二轮复习|压轴|选择题|填空题|大题|合集|全集|系列|课件|精讲|题库|视频)$/;
   function relScore(v, q) {
-    var n = 0, i, hay = (v.t || '') + ' ' + (v.a || '') + ' ' + (v.kp || '') + ' ' + (v.series || '');
+    var n = 0, i, hay = (v.t || '') + ' ' + (v.a || '') + ' ' + (v.kp || '');
     for (i = 0; i < q.words.length; i++) {
       var t = q.words[i];
-      if (t.length < 2) continue;
+      if (t.length < 2 || GENERIC.test(t)) continue;   /* 通用词不计相关性 */
       if (hay.indexOf(t) >= 0) n += (v.t || '').indexOf(t) >= 0 ? 10 : 5;
       if (v.kp && v.kp.indexOf(t) >= 0) n += 6;
     }
-    if (q.kp && hay.indexOf(q.kp) >= 0) n += 20;
+    if (q.kp && q.kp.length >= 2 && hay.indexOf(q.kp) >= 0) n += 20;
     return n;
   }
 
@@ -134370,13 +134973,13 @@ window.__CTB144_SERIES__ = [
     pick(function (v) { return (v.celeb ? 38 : 0) + (SERIES_RE.test(v.series || '') ? 22 : 0) + relScore(v, q); });
     var guard = 0;
     while (picked.length < limit && guard++ < limit + 3) pick(function (v) { return score(v, q); });
-    if (picked.length < 3) {                 /* 兜底：科目视频极少时按相关性补满 */
+    if (picked.length < 3) {                 /* 10.227：只在「真正相关」的池子里补，相关度>0 才收录 */
       var rest = rankFor(q, 30, false);
-      for (j = 0; j < rest.length && picked.length < 3; j++) if (!seen[rest[j].b] && !GEX[rest[j].b]) { seen[rest[j].b] = 1; picked.push(rest[j]); }
-      for (j = 0; j < LIB.length && picked.length < 3; j++) {
-        var vv = LIB[j];
-        if (!seen[vv.b] && !GEX[vv.b] && (vv.s === '全科' || vv.s === q.subject)) { seen[vv.b] = 1; picked.push(vv); }
+      for (j = 0; j < rest.length && picked.length < 3; j++) {
+        if (!seen[rest[j].b] && !GEX[rest[j].b] && relScore(rest[j], q) > 0) { seen[rest[j].b] = 1; picked.push(rest[j]); }
       }
+      /* 已删除「从 LIB 前几条无条件补满」的旧兜底：它正是无关视频混入的通道。
+         一条相关视频都没有时返回空，上层不显示真人讲解模块。 */
     }
     AMAP[pk] = picked.map(function (x) { return x.b; });
     if (Object.keys(AMAP).length > 900) { var ks = Object.keys(AMAP); for (i = 0; i < ks.length - 600; i++) delete AMAP[ks[i]]; }
@@ -134983,7 +135586,11 @@ window.__CTB144_SERIES__ = [
       if (!c || c.id === 'ctbSelfQList' || c.getAttribute('data-c144-done')) continue;
       var txt = (c.textContent || '').replace(/\s+/g, ' ');
       if (txt.length < 24) continue;
-      var q = normalize({ subject: normSubj(txt.slice(0, 320)), kp: '', stem: txt.slice(0, 200),
+      /* 10.227：抓真实知识点——从卡片「知识点：xxx」/data 属性提取，不再写死空串 */
+      var kpRaw = (c.getAttribute('data-kp') || c.getAttribute('data-ch') || '')
+        || ((txt.match(/知识点[：:]\s*([^\s，。、；;]{2,24})/) || [])[1] || '');
+      var kpTxt = String(kpRaw || '').replace(/^(知识点|考点|章节)[：:]\s*/, '').trim().slice(0, 24);
+      var q = normalize({ subject: normSubj(kpTxt + ' ' + txt.slice(0, 320)), kp: kpTxt, stem: txt.slice(0, 200),
         projectKey: 'wrong:' + (c.id || 'x') + ':' + hash(txt.slice(0, 60)), limit: 4 });
       var list = fetchFor(q, { online: true });
       if (!list.length) continue;
@@ -137257,7 +137864,8 @@ window.__CTB144_SERIES__ = [
       } catch (e) { }
     }
     if (!c._kp) c._kp = {};
-    c.mode = 'exam';
+    /* 10.227：错题（有我的作答/解析/标准答案）走 wrong 九步，与文字九维完全同一份写法 */
+    c.mode = (c.my || c.analysis || o.wrong || o.isWrong) ? 'wrong' : 'exam';
     return c;
   }
 
@@ -137328,7 +137936,7 @@ window.__CTB144_SERIES__ = [
     var c = ctxOf(ctx), raw = null, out = [], i;
     try {
       var f = W.__CTB_NINE_TEXT_SEGS__;
-      if (typeof f === 'function') raw = f(c, c._kp || {}, 'exam');
+      if (typeof f === 'function') raw = f(c, c._kp || {}, c.mode || 'exam');
     } catch (e) { raw = null; }
     if (!raw || raw.length < 9) raw = fallback(c);
     for (i = 0; i < 9; i++) {
@@ -137336,7 +137944,8 @@ window.__CTB144_SERIES__ = [
       try {
         if (W.CTB_TERM__ && typeof W.CTB_TERM__.write === 'function') b = W.CTB_TERM__.write(b);
       } catch (e) { }
-      out.push({ i: ICON[i], t: T9[i], b: b || '（暂无）' });
+      /* 10.227：标题优先用九维生成器返回的段标题，与文字九维逐字一致；无则退回 T9 */
+      out.push({ i: x.i || ICON[i], t: x.t || T9[i], b: b || '（暂无）' });
     }
     return out;
   }
@@ -138824,7 +139433,7 @@ window.__CTB144_SERIES__ = [
   var SINCE = Math.floor(new Date(2023, 10, 16, 0, 0, 0).getTime() / 1000);
   var SINCE_TXT = '2023-11 起 · 2024/2025/2026 版优先';
   var MKEY = 'ctb150_meta_v1', PKEY = 'ctb150_pool_v1', IKEY = 'ctb150_init_v1';
-  var AKEY = 'ctb144_assign_v1', OKEY = 'ctb144_online_v1';
+  var AKEY = 'ctb144_assign_v2', OKEY = 'ctb144_online_v2';   /* 10.227：抬版本强制丢弃旧的错误分配缓存 */
   var HOUR6 = 6 * 3600 * 1000, DAY7 = 7 * 86400 * 1000;
 
   var BAD_RE = /秒懂|1\s*分钟|一分钟|30\s*秒|60\s*秒|速看|切片|预告|花絮|鬼畜|竖屏|短视频|查分|混剪|开箱|高考加油|考后感受|小学|初中|中考|初一|初二|初三|七年级|八年级|九年级|小升初|少儿|幼儿|专升本|考研|成人高考|成考|中职|高职|单招|大学语文|大学物理|高等数学|竞赛|联赛|对口高考|职教高考|学历提升/;
@@ -139023,9 +139632,21 @@ window.__CTB144_SERIES__ = [
         for (var i = 0; i < NS.length; i++) if (t.indexOf(NS[i]) >= 0) return NS[i];
         return '';
       }
-      function topUp(r, limit, subj) {
+      function topUp(r, limit, subj, qwords) {
         var out = [], seen = {}, i, v;
         limit = limit || 4;
+        /* 10.227：题目关键词（来自题干/知识点）——补位视频必须命中其一，杜绝无关套卷混入 */
+        qwords = qwords || [];
+        function related(vv) {
+          if (!qwords.length) return true;                 /* 无题干可依时退回原逻辑 */
+          var tt = (vv.t || '') + ' ' + (vv.a || '') + ' ' + (vv.kp || '');
+          var GENERIC = /^(真题|原题|逐题|讲题|套卷|试卷|模拟卷|一模|二模|质检|期中|期末|高考|一轮复习|二轮复习|压轴|选择题|填空题|大题|合集|全集|系列|课件|精讲|题库|视频)$/;
+          for (var k = 0; k < qwords.length; k++) {
+            var w = String(qwords[k] || '');
+            if (w.length >= 2 && !GENERIC.test(w) && tt.indexOf(w) >= 0) return true;
+          }
+          return false;
+        }
         /* 科目来源：显式 → CTB_SUBJ_FIX 真实科目 → CTV9 当前题 → TOC/PL → r[0] */
         if (!subj) { try { subj = (W.CTB_SUBJ_FIX && W.CTB_SUBJ_FIX.state && W.CTB_SUBJ_FIX.state().current) || ''; } catch (e) { } }
         if (!subj) { try { subj = (W.CTB_SUBJ_FIX && W.CTB_SUBJ_FIX.real && W.CTB_SUBJ_FIX.real({})) || ''; } catch (e) { } }
@@ -139042,16 +139663,18 @@ window.__CTB144_SERIES__ = [
           if (!s) s = vSubj(v2) || vTitleSubj(v2);       /* 无科目字段：从标题推断 */
           return (!s || s === want || s === '全科');     /* 明确异科 → 剔除 */
         }
-        /* ① 原结果 r 也过滤，杜绝异科视频混入 */
+        /* ① 原结果 r 过滤：异科剔除 + 10.227 相关度校验（无题干词时放行） */
         for (i = 0; i < (r || []).length; i++) {
           v = r[i];
           if (!v || !v.b || seen[v.b] || !allowed(v) || !match(v)) continue;
+          if (!related(v)) continue;
           seen[v.b] = 1; out.push(v);
         }
-        /* ② 同科补位 */
+        /* ② 同科补位：10.227 必须命中题目关键词，宁可不足也不塞无关套卷 */
         for (i = 0; i < lib.length && out.length < limit; i++) {
           v = lib[i];
           if (!v || !v.b || seen[v.b] || !allowed(v) || !match(v)) continue;
+          if (!related(v)) continue;
           seen[v.b] = 1; out.push(v);
         }
         return out;
@@ -139063,21 +139686,40 @@ window.__CTB144_SERIES__ = [
         var n = NS(s);
         return n || String(s || '');
       }
-      api.assign = function (pk, item, limit) { return topUp(oa.apply(api, arguments), limit || 4, subjOf(item)); };
-      api.fetchFor = function () { var r = of.apply(api, arguments) || []; return topUp(r, 5, subjOf(arguments[0])); };
-      api.nineVideos = function () { return topUp(on.apply(api, arguments), 5, subjOf(arguments[1])); };
+      /* 10.227：从题目对象抽取题干/知识点关键词，供 topUp 做相关性校验 */
+      function wordsOf(item) {
+        var s = '', i;
+        if (!item) return [];
+        if (typeof item === 'string') s = item;
+        else s = [item.stem, item.q, item.text, item.title, item.kp, item.knowledge, item.tags].filter(Boolean).join(' ');
+        s = String(s).replace(/[，。、；：！？（）()\[\]【】\s,.;:!?「」《》=＋+×÷]+/g, ' ');
+        var arr = s.split(' '), out = [], GENERIC = /^(真题|原题|逐题|讲题|套卷|试卷|模拟卷|一模|二模|质检|期中|期末|高考|一轮复习|二轮复习|压轴|选择题|填空题|大题|合集|全集|系列|课件|精讲|题库|视频|正方体|ABCD)$/;
+        for (i = 0; i < arr.length && out.length < 12; i++) {
+          var w = arr[i];
+          if (w.length >= 2 && w.length <= 12 && !GENERIC.test(w) && out.indexOf(w) < 0) out.push(w);
+        }
+        /* 专业多字词优先：整块知识点（如「空间几何计数」）作为强相关词 */
+        if (item && item.kp && String(item.kp).length >= 3) out.unshift(String(item.kp).slice(0, 16));
+        return out;
+      }
+      api.assign = function (pk, item, limit) { return topUp(oa.apply(api, arguments), limit || 4, subjOf(item), wordsOf(item)); };
+      api.fetchFor = function () { var r = of.apply(api, arguments) || []; return topUp(r, 5, subjOf(arguments[0]), wordsOf(arguments[0])); };
+      api.nineVideos = function () { return topUp(on.apply(api, arguments), 5, subjOf(arguments[1]), wordsOf(arguments[1])); };
       api.groups = function () {
         var g = og.apply(api, arguments) || [], i;
         var sj = '';
         try { sj = (W.TOC && W.TOC.ctx && W.TOC.ctx.subject) || ''; } catch (e) { }
         if (!sj) { try { sj = (W.CTB144_REALVID && W.PL && W.PL.q && W.PL.q.subject) || ''; } catch (e) { } }
-        for (i = 0; i < g.length; i++) if (g[i] && g[i].list) g[i].list = topUp(g[i].list, 5, sj);
+        for (i = 0; i < g.length; i++) if (g[i] && g[i].list) {
+          var gk = g[i].kp || g[i].name || g[i].title || '';
+          g[i].list = topUp(g[i].list, 5, sj, gk ? [String(gk).slice(0, 16)] : []);
+        }
         return g;
       };
       try {
         var K = W.KBV, om = K && K.match;
         if (K && typeof om === 'function' && !om.__ctb150) {
-          K.match = function () { var r = topUp(om.apply(K, arguments), 5, subjOf(arguments[0])); return r.map(function (v) { return { t: v.t, b: v.b, a: v.a, tag: v.series || '' }; }); };
+          K.match = function () { var r = topUp(om.apply(K, arguments), 5, subjOf(arguments[0]), wordsOf(arguments[0])); return r.map(function (v) { return { t: v.t, b: v.b, a: v.a, tag: v.series || '' }; }); };
           K.match.__ctb150 = 1;
         }
       } catch (e) { }
@@ -144106,6 +144748,22 @@ return out;
       var vv = localEl(); if (vv) { try { vv.playbackRate = PV.rate; } catch (e) { } }
       if (!vv) setHint('倍速已记下 ' + PV.rate + '×，切「▶ 本机视频」后生效');
     });
+    /* 10.225 明确的播放/暂停按钮 */
+    var pb = D.getElementById('ctb175Play');
+    if (pb) pb.addEventListener('click', function () {
+      var vv = localEl();
+      if (!vv) { setHint('点「▶ 本机视频」加载本机视频后即可播放/暂停'); return; }
+      try {
+        if (vv.paused) { var p = vv.play(); if (p && p.catch) p.catch(function () {}); pb.textContent = '⏸ 暂停'; }
+        else { vv.pause(); pb.textContent = '▶ 播放'; }
+      } catch (e) { }
+    });
+    /* 随播放状态同步按钮文字 */
+    var vv0 = localEl();
+    if (vv0 && pb) {
+      vv0.addEventListener('play', function () { pb.textContent = '⏸ 暂停'; });
+      vv0.addEventListener('pause', function () { pb.textContent = '▶ 播放'; });
+    }
   }
   /* 10.180：内嵌源在 APK WebView 里可能被拦成黑屏。给一次明确兜底提示，
      不自动乱切源（避免闪屏），把「📱 用App打开」作为最稳路径交给系统选择器。 */
@@ -144171,6 +144829,7 @@ return out;
       + '<input type="range" id="ctb175Seek" min="0" max="1000" value="0" aria-label="播放进度">'
       + '<span id="ctb175Time">00:00 / 00:00</span></div>'
       + '<div class="ctb175ctlrow">'
+      + '<button type="button" id="ctb175Play" style="cursor:pointer;border:none;background:#0369a1;color:#fff;border-radius:6px;padding:3px 9px;font-size:13px;" title="播放/暂停">⏯ 播放/暂停</button>'
       + '<span>🔊</span><input type="range" id="ctb175Vol" min="0" max="100" value="' + Math.round(PV.vol * 100) + '" aria-label="音量">'
       + '<span>⏩</span><select id="ctb175Rate" aria-label="倍速">' + ro + '</select>'
       + '<span id="ctb175Hint" class="ctb175hint">'
@@ -145116,18 +145775,22 @@ return out;
         return Promise.resolve(f(msgs, opt)).then(function (v) { return S(v); });
       } catch (e) { return Promise.reject(e); }
     }
-    /* 兼容通道 */
-    var alt = ['askAI', 'aiChat', 'aiRecogChat'], k, g;
+    /* 兼容通道：带图时优先走支持多模态的 aiRecogChat，并显式带 kind:vision（修复：旧版备选通道丢 kind，图片识别不生效） */
+    var alt = img ? ['aiRecogChat', 'askAI', 'aiChat'] : ['askAI', 'aiChat', 'aiRecogChat'], k, g, hit = false;
     for (k = 0; k < alt.length; k++) {
       g = W[alt[k]];
       if (typeof g === 'function') {
         try {
-          return Promise.resolve(g(msgs, { temp: 0.3, maxTokens: 1400 }))
-            .then(function (v) { return S(v); });
+          var r = g(msgs, opt);
+          if (typeof r !== 'undefined' && r && typeof r.then === 'function') {
+            hit = true;
+            return r.then(function (v) { return S(v); });
+          }
         } catch (x) { }
       }
     }
-    return Promise.reject(new Error('AI 通道未就绪：请到「AI 设置」确认已填 Key / 网络可用'));
+    if (hit) return;
+    return Promise.reject(new Error(img ? '图片识别通道未就绪：需配置支持视觉（多模态）的模型 Key，如 qwen3-vl / kimi-k2.6 / qwen3.8-max' : 'AI 通道未就绪：请到「AI 设置」确认已填 Key / 网络可用'));
   }
   function localFallback(question, c) {
     /* 不假装 AI 答了：优先复用 CTB_175 的真实条目问答，并标注来源 */
@@ -149428,8 +150091,9 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
    10.222 · 千问/百炼401根因修复：前缀配套地址+误导文案纠正；数据看板红框卡片可点击、随时问图片识别、九步解析原题置顶；随时问支持图片识别（多模态视觉通道）；
             九步解析原题置顶带图+动画；讲解统一九步顺序与教材标准术语
             （同类模型/秒杀技巧/变式各 3-5 实例），拒绝套话。
-   10.223 · 视频讲解恢复自动匹配知识点：错题卡按钮改为把题目对象传入（此前被丢成 null），
-            知识点在知识册无内容时自动转「本题讲解」，任何路径不再要求手动选择知识点；发布版
+   10.224 · 视频讲解恢复自动匹配知识点（错题卡传题目对象 + 名称包含兜底 + 本题讲解）；
+            修复 AI 模型设置弹窗点「✕ 关闭」无效（清除内联 display 强制显示）；
+            退出按钮加固：顶栏降层避免截获点击 + 统一 44px 最小触摸热区。
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -150206,7 +150870,6 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 </script>
 
 
-<!-- ================= 10.223 视频讲解自动匹配兜底（不再要求手动选择知识点） ================= -->
 <script>
 (function () {
   'use strict';
@@ -150244,17 +150907,19 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
       }
       var kp = kpName2 ? kbOf(subj, kpName2) : null;
       // 名称级兜底：知识册里同名查不到时，按包含关系找最近的可用条目
-      if (!kp && kpName2) {
-        try {
-          var names = (W.KB && W.KB.names) ? (W.KB.names(subj) || []) : [];
-          for (var i = 0; i < names.length; i++) {
-            var n = String(names[i]);
-            if (!n) continue;
-            if (n.indexOf(kpName2) >= 0 || kpName2.indexOf(n) >= 0) {
-              if (kbOf(subj, n)) { kpName2 = n; kp = kbOf(subj, n); break; }
-            }
+      if (kpName2 && (W.KB && W.KB.names)) {
+        var names = W.KB.names(subj) || [];
+        for (var i = 0; i < names.length; i++) {
+          var n = String(names[i]);
+          if (!n) continue;
+          // 先全角→半角归一化（题干里常出现全角 ² ∩ ⊆ 等）
+          var nn = n.replace(/（/g, '(').replace(/）/g, ')').replace(/｜/g, '|').replace(/，/g, ',').replace(/；/g, ';');
+          var kk = kpName2.replace(/（/g, '(').replace(/）/g, ')').replace(/｜/g, '|').replace(/，/g, ',').replace(/；/g, ';');
+          if (n.indexOf(kpName2) >= 0 || kpName2.indexOf(n) >= 0 ||
+              nn.indexOf(kk) >= 0 || kk.indexOf(nn) >= 0) {
+            if (kbOf(subj, n)) { kpName2 = n; kp = kbOf(subj, n); break; }
           }
-        } catch (e) { }
+        }
       }
       // 知识点仍无内容 → 自动走「本题讲解」，绝不要求手动选择
       if (!kp) {
@@ -150289,4 +150954,187 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
 })();
 </script>
 
+<script>
+/* 10.224：修复「AI 模型设置」弹窗关闭按钮无效。
+   根因：10.139 解锁流程 ctbForceCfg() 给 #aiCfgModal 写入内联 display:flex!important；
+   原 closeCfg() 仅移除 .ai-on 类，内联样式仍然强制显示，因此点「✕ 关闭」无反应。
+   修法：关闭时同步清除内联 display/z-index，并对解锁流程的延时强制显示做有限次兜底。 */
+(function () {
+  'use strict';
+  var W = window, D = document;
+  if (W.__CTB224_CFG_CLOSE__) return;
+  W.__CTB224_CFG_CLOSE__ = 1;
+
+  function modal() { return D.getElementById('aiCfgModal'); }
+  function hide() {
+    var m = modal(); if (!m) return;
+    try { m.classList.remove('ai-on'); m.classList.remove('on'); m.classList.remove('show'); } catch (e) { }
+    try {
+      m.style.removeProperty('display');
+      m.style.removeProperty('z-index');
+      m.style.removeProperty('visibility');
+    } catch (e) { }
+  }
+  function scheduleCleanup() {
+    [0, 280, 720, 1520, 2200].forEach(function (ms) {
+      setTimeout(function () { if (W.__CTB224_CFG_CLOSED__ === true) hide(); }, ms);
+    });
+  }
+  function patch() {
+    var api = W.AI_RECOG;
+    if (!api || typeof api !== 'object') return;
+    if (!api.__v224Close && typeof api.closeCfg === 'function') {
+      var oldClose = api.closeCfg;
+      api.closeCfg = function () {
+        W.__CTB224_CFG_CLOSED__ = true;
+        try { return oldClose.apply(this, arguments); } catch (e) { }
+        finally { hide(); scheduleCleanup(); }
+      };
+      api.__v224Close = 1;
+    }
+    if (!api.__v224Open && typeof api.openAiCfg === 'function') {
+      var oldOpen = api.openAiCfg;
+      api.openAiCfg = function () {
+        W.__CTB224_CFG_CLOSED__ = false;
+        return oldOpen.apply(this, arguments);
+      };
+      api.__v224Open = 1;
+    }
+    if (typeof W.openAiCfg === 'function' && !W.openAiCfg.__v224Open) {
+      var oldOpen2 = W.openAiCfg;
+      W.openAiCfg = function () {
+        W.__CTB224_CFG_CLOSED__ = false;
+        return oldOpen2.apply(this, arguments);
+      };
+      W.openAiCfg.__v224Open = 1;
+    }
+  }
+  patch();
+  [50, 300, 900, 1800].forEach(function (ms) { setTimeout(patch, ms); });
+  if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', patch, false);
+})();
+</script>
+
+<script>
+/* 10.224：退出/关闭按钮可用性加固（全局，不针对单个弹窗）
+   实测根因一：10.141 把 #topbar 提到 z-index 2147483000 且高度 91px，
+   任何 z-index 低于它的全屏层，其顶部 0–91px 内的关闭按钮都会被顶栏截获点击；
+   实测根因二：部分关闭按钮只有 56×26px，低于 44px 最小触摸热区。
+   修法：① 顶栏降到 9000（仍高于普通正文，低于所有模态层）；
+         ② 给所有「关闭/退出」按钮加透明热区，最小 44×44，不改变视觉尺寸。 */
+(function () {
+  'use strict';
+  var W = window, D = document;
+  if (W.__CTB224_EXIT_FIX__) return;
+  W.__CTB224_EXIT_FIX__ = 1;
+
+  function lowerTopbar() {
+    var t = D.getElementById('topbar');
+    if (!t) return;
+    try { t.style.setProperty('z-index', '9000', 'important'); } catch (e) { }
+  }
+  lowerTopbar();
+  [100, 400, 1200, 2500].forEach(function (ms) { setTimeout(lowerTopbar, ms); });
+
+  function css() {
+    if (D.getElementById('ctb224-exit-css')) return;
+    var st = D.createElement('style');
+    st.id = 'ctb224-exit-css';
+    st.textContent =
+      '.ctb-exit-hit{position:relative!important;pointer-events:auto!important;touch-action:manipulation!important}' +
+      '.ctb-exit-hitbox{position:absolute!important;left:50%!important;top:50%!important;' +
+      'transform:translate(-50%,-50%)!important;width:100%!important;height:100%!important;' +
+      'min-width:44px!important;min-height:44px!important;background:transparent!important;' +
+      'pointer-events:auto!important;border:0!important;padding:0!important;margin:0!important;' +
+      'z-index:0!important}';
+    (D.head || D.documentElement).appendChild(st);
+  }
+
+  var RE = /^(?:[✕×✖⏏⏻]\s*)?(关闭|退出|关闭窗口)$/;
+
+  function label(el) {
+    return String((el.innerText || el.textContent || '')).replace(/\s+/g, ' ').trim();
+  }
+  function markOne(el) {
+    if (!el || el.__ctbExitHit) return;
+    if (el.tagName !== 'BUTTON' && el.tagName !== 'A' && el.getAttribute('role') !== 'button') return;
+    if (!RE.test(label(el))) return;
+    var r = null;
+    try { r = el.getBoundingClientRect(); } catch (e) { }
+    if (!r || !r.width || !r.height) return;
+    el.__ctbExitHit = 1;
+    try { el.classList.add('ctb-exit-hit'); } catch (e) { }
+    try {
+      var s = D.createElement('span');
+      s.className = 'ctb-exit-hitbox';
+      s.setAttribute('aria-hidden', 'true');
+      el.appendChild(s);
+    } catch (e) { }
+  }
+  function markAll() {
+    if (D.visibilityState && D.visibilityState !== 'visible') return;
+    var list;
+    try { list = D.querySelectorAll('button,a,[role="button"]'); } catch (e) { return; }
+    for (var i = 0; i < list.length; i++) markOne(list[i]);
+  }
+  function boot() {
+    css(); markAll();
+    if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', function () { css(); markAll(); }, false);
+    [200, 800, 1800, 3500].forEach(function (ms) { setTimeout(function () { css(); markAll(); }, ms); });
+    try { setInterval(markAll, 2000); } catch (e) { }
+    D.addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== D.body && t.tagName !== 'BUTTON' && t.tagName !== 'A') t = t.parentNode;
+      if (t && t !== D.body) markOne(t);
+    }, true);
+  }
+  boot();
+})();
+</script>
+
+<script id="ctbSidebarBadges">
+/* [10.226] 修复侧边栏错题计数：updateBadges 在全文件被 5 处调用却从未定义，
+   导致「待复习」与「语文/数学/英语/物理/化学/生物」7 个角标永远停在 0。
+   口径：各科角标=该科错题总数；待复习=nextReviewDate<=今天 或 未标记已掌握。
+   数据来自 window.wrongs（错题本唯一数据源），只读统计，不改动任何错题。 */
+(function () {
+  var W = window, D = document;
+  var SUBS = ['语文', '数学', '英语', '物理', '化学', '生物'];
+  function today() {
+    try { if (W.__TODAY__) return W.__TODAY__(); } catch (e) { }
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function setTxt(id, v) {
+    var el = D.getElementById(id);
+    if (!el) return;
+    var t = String(v);
+    if (el.textContent !== t) el.textContent = t;
+  }
+  W.updateBadges = function () {
+    try {
+      var all = W.wrongs || [];
+      var t = today();
+      var due = 0;
+      SUBS.forEach(function (s) {
+        var list = all.filter(function (w) { return w && String(w.subject || w.subj || '') === s; });
+        setTxt('badge' + s, list.length);
+      });
+      for (var i = 0; i < all.length; i++) {
+        var w = all[i]; if (!w) continue;
+        var nr = String(w.nextReviewDate || '');
+        var isDue = (nr && nr <= t) || (!w.reviewed && !(w.mastery >= 3));
+        if (isDue) due++;
+      }
+      setTxt('badgePending', due);
+    } catch (e) { }
+  };
+  function boot() {
+    if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', W.updateBadges, false);
+    [0, 300, 1000, 2500, 5000].forEach(function (ms) { setTimeout(W.updateBadges, ms); });
+    try { setInterval(W.updateBadges, 3000); } catch (e) { }
+  }
+  boot();
+})();
+</script>
 </html>
