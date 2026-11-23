@@ -27,6 +27,16 @@
               剥离 Thinking Process/Analyze the Request/Context/Constraint 等英文独白段，非中文不展示；
               ② 随时问 prompt 加教材术语硬约束：全程中文、绝不输出英文/思考过程，严格课本教材标准术语、
               不造词不用大白话代替术语，术语首次出现可加极简释义，结论先行、分点步骤、拒绝套话寒暄。 -->
+<!-- CTB-CHANGELOG / 10.223 / 2026-11-23
+     本次修改（用户明确「修改授权」后执行）——视频讲解恢复自动匹配知识点：
+     1. 根因：错题卡「🎬 视频讲解」按钮（CTB_MARK.video）调用 openKbSlides 时把题目对象丢成 null，
+        而部分知识点（如「分类计数」）在知识册中 kb 标记为 0、无完整内容，KB.get 返回空，
+        于是落进「知识点与题目都没有」的分支，弹出「未能匹配到知识点，请在该题手动选择知识点后再看视频」。
+     2. 修复一（根因）：CTB_MARK.video 改为把题目对象 q 一并传给 openKbSlides。
+     3. 修复二（全局兜底）：新增末位脚本重包 openKbSlides——知识点查不到时先按名称做同义/包含匹配，
+        仍查不到则自动转「本题讲解」，任何路径都不再要求用户手动选择知识点。
+     4. 版本号统一 10.222 → 10.223。
+-->
 <!-- CTB-CHANGELOG / 10.222 / 2026-11-22
      本次修改（用户明确「修改授权」后执行）——Key 清空改选择性 + 千问直达地址：
      1. Key 清空改为「选择性清空」：按钮改为「🗑 选择性清空 Key（勾选后清除）」，点击列出已存 Key 的厂家勾选框，
@@ -44,7 +54,7 @@
         改为前缀配套+地域绑定+Key状态失效（删除/重置/移出空间/欠费/未实名）的真实原因与排查步骤。
      4. 模型下拉 label/tip 同步标注前缀配套地址与北京地域要求。
      5. 版本号统一 10.220 → 10.221。 -->
-<meta name="ctb-build" content="10.222">
+<meta name="ctb-build" content="10.223">
 <meta name="ctb-modify-policy" content="modify-requires-explicit-instruction: 修改授权">
 <script id="ctbPageBus">
 /* ============================================================================
@@ -667,8 +677,8 @@ try {
   'use strict';
   var W = window;
   if (W.CTB_ANS) return;
-  try { W.__APP_BUILD__ = '10.222'; W.__CTB_BUILD__ = '10.222'; } catch (e) { }
-  try { W.__CTB_MENU_VER__ = '10.222'; } catch (e) { }
+  try { W.__APP_BUILD__ = '10.223'; W.__CTB_BUILD__ = '10.223'; } catch (e) { }
+  try { W.__CTB_MENU_VER__ = '10.223'; } catch (e) { }
 
   
 
@@ -67346,7 +67356,7 @@ html+='<div class="nf-sec"><div class="nf-h">① 题目回顾</div>';
   var MANIFEST = 'manifest.json';
   
 
-  var BUILD = '10.222';
+  var BUILD = '10.223';
 
   
 
@@ -85383,7 +85393,7 @@ function emptyMsg(t) {
       try { W.kbSeekItem((it && it.subject) || '', kp, q.qid || null, null); return; } catch (e) { }
     }
     if (typeof W.openKbSlides === 'function') {
-      try { W.openKbSlides((it && it.subject) || '', kp, null, null); return; } catch (e) { }
+      try { W.openKbSlides((it && it.subject) || '', kp, q, null); return; } catch (e) { }
     }
     toast('视频讲解模块未就绪');
   };
@@ -100593,7 +100603,7 @@ function kpDetailHtml(mode, subj, book, kpName) {
 (function () {
   var W = window, D = document;
   var FILE = 'ctb650-sync.json';
-  var BUILD = '10.222';
+  var BUILD = '10.223';
 
   function ls(k, v) {
     try {
@@ -149418,6 +149428,8 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
    10.222 · 千问/百炼401根因修复：前缀配套地址+误导文案纠正；数据看板红框卡片可点击、随时问图片识别、九步解析原题置顶；随时问支持图片识别（多模态视觉通道）；
             九步解析原题置顶带图+动画；讲解统一九步顺序与教材标准术语
             （同类模型/秒杀技巧/变式各 3-5 实例），拒绝套话。
+   10.223 · 视频讲解恢复自动匹配知识点：错题卡按钮改为把题目对象传入（此前被丢成 null），
+            知识点在知识册无内容时自动转「本题讲解」，任何路径不再要求手动选择知识点；发布版
    ----------------------------------------------------------------------------
    ① 台账：记录「几点几分 · 哪个科目 · 做了什么 · 具体内容」，同一分钟同科目同动作
       合并为一次计数；保留 14 天、每天上限 150 条；内存缓存 + 800ms 批量落盘，
@@ -150191,6 +150203,90 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
   };
 })();
 
+</script>
+
+
+<!-- ================= 10.223 视频讲解自动匹配兜底（不再要求手动选择知识点） ================= -->
+<script>
+(function () {
+  'use strict';
+  var W = window;
+  if (W.__V223_VIDEO_FIX__) return;
+  W.__V223_VIDEO_FIX__ = 1;
+
+  function say(m) { try { if (W.showToast) W.showToast(m); } catch (e) { } }
+  function kbOf(subj, name) {
+    try { if (W.KB && W.KB.get) return W.KB.get(subj, name); } catch (e) { }
+    return null;
+  }
+  function pseudoQ(subj, kpName) {
+    var n = String(kpName || '').trim();
+    if (!n) return null;
+    return { stem: n, question: n, kp: n, knowledge: n, topic: n, subject: subj || '' };
+  }
+
+  function patch() {
+    if (typeof W.openKbSlides !== 'function' || W.openKbSlides.__v223) return;
+    var orig = W.openKbSlides;
+    W.openKbSlides = function (subj, kpName, qOrId, focusKey) {
+      var q = null, kpName2 = kpName;
+      if (qOrId) {
+        if (typeof qOrId === 'object') q = qOrId;
+        else { try { if (W.Bank && W.Bank.byId) q = W.Bank.byId(String(qOrId)) || null; } catch (e) { } }
+      }
+      if (!kpName2 && q) {
+        try {
+          if (typeof W.resolveKpName === 'function') {
+            var r = W.resolveKpName(subj, String(q.stem || q.question || ''));
+            if (r && r.kp) kpName2 = r.kp;
+          }
+        } catch (e) { }
+      }
+      var kp = kpName2 ? kbOf(subj, kpName2) : null;
+      // 名称级兜底：知识册里同名查不到时，按包含关系找最近的可用条目
+      if (!kp && kpName2) {
+        try {
+          var names = (W.KB && W.KB.names) ? (W.KB.names(subj) || []) : [];
+          for (var i = 0; i < names.length; i++) {
+            var n = String(names[i]);
+            if (!n) continue;
+            if (n.indexOf(kpName2) >= 0 || kpName2.indexOf(n) >= 0) {
+              if (kbOf(subj, n)) { kpName2 = n; kp = kbOf(subj, n); break; }
+            }
+          }
+        } catch (e) { }
+      }
+      // 知识点仍无内容 → 自动走「本题讲解」，绝不要求手动选择
+      if (!kp) {
+        var any = q || pseudoQ(subj, kpName2);
+        if (any && typeof W.openQVideo === 'function') {
+          try { return W.openQVideo(subj, any); } catch (e) { }
+        }
+        say('视频讲解模块未就绪');
+        return;
+      }
+      var args = Array.prototype.slice.call(arguments);
+      args[1] = kpName2;
+      var ret = orig.apply(this, args);
+      try {
+        if (W.V && W.V.qid && typeof W.V.qid === 'object') {
+          W.V.qid = W.V.qid.qid || W.V.qid.id || '';
+        }
+      } catch (e) { }
+      return ret;
+    };
+    W.openKbSlides.__v223 = 1;
+  }
+
+  patch();
+  try { setTimeout(patch, 300); } catch (e) { }
+  try { setTimeout(patch, 1500); } catch (e) { }
+  try {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', patch, false);
+    }
+  } catch (e) { }
+})();
 </script>
 
 </html>
