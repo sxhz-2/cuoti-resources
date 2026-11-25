@@ -120595,7 +120595,7 @@ function boardDraw121(fi, p) {
    
   ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(0, h - 54, w, 54);
   ctx.fillStyle = '#9dd6bd'; ctx.font = '19px system-ui,SimHei,sans-serif';
-  ctx.fillText('本项第 ' + (f.step + 1) + '/' + f.n + ' 步　｜　总第 ' + (fi + 1) + '/' + V121.flat.length +
+  ctx.fillText('第 ' + (f.step + 1) + '/' + f.n + ' 步　｜　总第 ' + (fi + 1) + '/' + V121.flat.length +
     ' 步　｜　' + fmtTime(V121.t) + ' / ' + fmtTime(V121.total), 28, h - 20);
   ctx.textAlign = 'right'; ctx.fillStyle = '#ffd479';
   ctx.fillText('动画同步演示 →', w - 28, h - 20); ctx.textAlign = 'left';
@@ -122071,7 +122071,7 @@ function boardDraw121(fi, p) {
 
    
   ctx.fillStyle = '#ffd479'; ctx.font = 'bold ' + F.mid + 'px system-ui,SimHei,sans-serif';
-  ctx.fillText(dir + '　·　第 ' + (f.seg + 1) + '/9 项　·　本项第 ' + (f.step + 1) + '/' + f.n + ' 步', 18, 26);
+  ctx.fillText(dir + '　·　第 ' + (f.seg + 1) + '/9 项　·　第 ' + (f.step + 1) + '/' + f.n + ' 步', 18, 26);
   ctx.strokeStyle = 'rgba(255,212,121,.5)'; ctx.beginPath(); ctx.moveTo(18, 36); ctx.lineTo(cw - 18, 36); ctx.stroke();
 
    
@@ -126193,7 +126193,7 @@ function c128BoardPaint(fi, p) {
   var f = V121.flat[fi]; if (!f) return false;
   var dir = (V121.segs && V121.segs[f.seg] && (V121.segs[f.seg].dir || V121.segs[f.seg].tag)) || f.tag || '板书';
   var h = '<div class="c128-top">' + c128Esc(dir) + '　·　第 ' + (f.seg + 1) + '/' +
-    (V121.segs ? V121.segs.length : 9) + ' 项　·　本项第 ' + (f.step + 1) + '/' + f.n + ' 步</div>';
+    (V121.segs ? V121.segs.length : 9) + ' 项　·　第 ' + (f.step + 1) + '/' + f.n + ' 步</div>';
    
   var done = [];
   for (var i = fi - 1; i >= 0 && done.length < 2; i--) {
@@ -127084,7 +127084,26 @@ function c127Def(name, subj, f) {
 
 
 
-function c130Row(main, why) { return main + (why ? '  · ' + why : ''); }
+/* 10.233：板书只讲题本身 —— 去掉【标签】方括号与"先记住…""把题目给的量…"这类提示语，
+   标签换成自然说法（如"先认符号"→"本题字母："），纯套话行整行丢弃。返回 '' 时由 c128Blocks 过滤。 */
+var C130_LBL = {
+  '先认符号': '本题字母：', '逐个点名': '', '数值': '题中数值：', '单位': '单位：',
+  '易混检查': '注意：', '讲概念': '', '定义': '', '放回本题': '题中对应：',
+  '易错': '易错：', '公式': '公式：'
+};
+function c130Row(main, why) {
+  var s = String(main == null ? '' : main).replace(/\s+/g, ' ').trim();
+  var m = /^【([^】]{1,16})】\s*/.exec(s);
+  if (m) {
+    var lb = m[1], rest = s.slice(m[0].length);
+    if (/^术语/.test(lb)) s = '术语：' + rest;
+    else if (Object.prototype.hasOwnProperty.call(C130_LBL, lb)) s = C130_LBL[lb] + rest;
+    else s = rest;
+  }
+  s = s.replace(/^这道题只讲一件事[:：]\s*/, '');
+  if (/^本项要用到\s*\d*\s*个?专业术语/.test(s)) return '';
+  return s.trim();
+}
 
 function c128Segs(f, path, t, n) {
   var subj = f.subject || '本题', kp = f.kp || (subj + '知识点');
@@ -127103,12 +127122,12 @@ function c128Segs(f, path, t, n) {
   var S = [];
 
    
+  /* 10.233：读题段 = 题干 + 已知 + 所求，三行讲清，不再重复三遍同一句话 */
+  var known = (cl.length > 1 ? cl.slice(0, cl.length - 1) : [cl[0]]).join('；');
   S.push(c128Blocks([
-    c130Row('【上课】这道题只讲一件事：' + c128Clip(ask, 34), '先记住最后要交出去的是什么，下面每一步都要回到这一句。'),
-    c130Row('【原题照抄】' + c128Clip(q, 62), '一个字不改地读一遍，读题本身就是在取条件。'),
-    c130Row('【已知栏】' + c128Clip(cl[0] || q, 44), '把题目给的量写进左栏，别急着算。'),
-    c130Row('【所求栏】' + c128Clip(ask, 36), '写进右栏；后面每写出一行式子，都要说它离所求更近了还是没有。'),
-    c130Row('【检查】题目问的是「' + c128Clip(ask, 20) + '」，不是别的量', '很多错不是算错，是一开始就答错了对象。')
+    c130Row(c128Clip(q, 600), ''),
+    (known && known !== q) ? c130Row('已知：' + c128Clip(known, 300), '') : '',
+    c130Row('所求：' + c128Clip(ask, 200), '')
   ], 6));
 
    
@@ -127232,7 +127251,7 @@ function c128BoardPaint(fi, p) {
   var f = V121.flat[fi]; if (!f) return false;
   var dir = (V121.segs && V121.segs[f.seg] && (V121.segs[f.seg].dir || V121.segs[f.seg].tag)) || f.tag || '板书';
   var h = '<div class="c128-top">' + c130Esc(dir) + '　·　第 ' + (f.seg + 1) + '/' +
-    (V121.segs ? V121.segs.length : 9) + ' 项　·　本项第 ' + (f.step + 1) + '/' + f.n + ' 步</div>';
+    (V121.segs ? V121.segs.length : 9) + ' 项　·　第 ' + (f.step + 1) + '/' + f.n + ' 步</div>';
   var done = [];
   for (var i = fi - 1; i >= 0 && done.length < 2; i--) {
     var pr = V121.flat[i];
@@ -127259,19 +127278,9 @@ function c128BoardPaint(fi, p) {
     if (nf[j].seg !== f.seg) break;
     next.push(nf[j]);
   }
-  if (next.length) {
-    h += '<div class="c130-next"><div class="c130-next-h">📝 本项接下来要写</div>';
-    for (var k = 0; k < next.length; k++) {
-      h += '<div class="c130-next-r">○ ' + c130Esc(c130Clip(String(next[k].text || '').split(/\s{2,}|\n/)[0], 42)) + '</div>';
-    }
-    h += '</div>';
-  }
+  /* 10.233：删掉「📝 本项接下来要写」「📖 本题术语」两块模板提示，板书只留本题内容 */
    
-  var ts = C130.terms || [];
-  if (ts.length) {
-    h += '<div class="c130-tline">📖 本题术语：' +
-      c130Esc(ts.slice(0, 4).map(function (z) { return z.t; }).join(' · ')) + '</div>';
-  }
+  /* 10.233：术语行同样属于模板提示，已移除 */
   h += '<div class="c128-foot">总第 ' + (fi + 1) + ' / ' + nf.length + ' 步　｜　' +
     fmtTime(V121.t) + ' / ' + fmtTime(V121.total) + '</div>';
   if (el.innerHTML !== h) el.innerHTML = h;
@@ -139551,12 +139560,16 @@ window.__CTB144_SERIES__ = [
   function apiGet(url, cb) {
     var done = false;
     function fin(o) { if (done) return; done = true; try { cb(o); } catch (e) { } }
+    /* 10.233：file:// 或跨域被拦时 fetch 必然失败，该接口也不支持 jsonp，
+       过去会白等 3.8s 再注入 script、控制台刷一片 CORS 报错。
+       现在直接返回 __skip，表示「本条不做联网核验」，播放不受影响。 */
     try {
       if (W.fetch) W.fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
-        .then(function (r) { return r.json(); }).then(fin).catch(function () { jsonp(url, fin); });
-      else jsonp(url, fin);
-    } catch (e) { try { jsonp(url, fin); } catch (x) { fin(null); } }
-    W.setTimeout(function () { fin(null); }, 3800);
+        .then(function (r) { return r.json(); }).then(fin)
+        .catch(function () { fin({ __skip: 1 }); });
+      else fin({ __skip: 1 });
+    } catch (e) { fin({ __skip: 1 }); }
+    W.setTimeout(function () { fin({ __skip: 1 }); }, 3800);
   }
   function merge(bv, d, p) {
     var m = META[bv] || {};
@@ -139573,6 +139586,7 @@ window.__CTB144_SERIES__ = [
        用总时长（而非分P最大时长）判定「≥5 分钟」也更贴合需求。 */
     apiGet('https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bv), function (o) {
       try {
+        if (o && o.__skip) { end(); return; }   /* 10.233：拿不到就不核验，也不记失败，直接放行播放 */
         var z = (o && o.code === 0 && o.data) || null;
         if (z) {
           var d = parseInt(z.duration, 10) || null, pp = parseInt(z.pubdate, 10) || null;
@@ -139582,6 +139596,7 @@ window.__CTB144_SERIES__ = [
       end();
     });
     W.setTimeout(function () {
+      if (settled) return;
       if (!META[bv]) { META[bv] = { ts: Date.now(), fail: 1 }; saveMeta(); }
       end();
     }, 4200);
@@ -151460,7 +151475,15 @@ function segIdx(w) {
 
 /* ---------- 样式 ---------- */
 var CSS =
-'.ctb-enh{background:linear-gradient(180deg,#12233b,#0d1b2c);border-bottom:1px solid rgba(143,208,255,.25);padding:8px 10px;color:#e8f1f8;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;font-size:13px;flex:0 0 auto;max-height:40vh;overflow:auto;z-index:30}' +
+/* 10.233：置顶卡默认单行常驻，图示/问答改为按需展开，避免吃掉半个舞台 */
+'.ctb-enh{background:linear-gradient(180deg,#12233b,#0d1b2c);border-bottom:1px solid rgba(143,208,255,.25);padding:6px 8px;color:#e8f1f8;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;font-size:12.5px;flex:0 0 auto;max-height:46vh;overflow:auto;z-index:30}' +
+'.ctb-enh .ctb-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px}' +
+'.ctb-enh .ctb-bar .lb{font-size:11px;color:#8fd0ff;font-weight:700}' +
+'.ctb-enh .ctb-bar .tb{background:rgba(255,255,255,.10);border:1px solid rgba(143,208,255,.30);color:#cfe0f2;border-radius:8px;padding:4px 9px;font-size:11.5px;line-height:1.2;cursor:pointer}' +
+'.ctb-enh .ctb-bar .tb.on{background:rgba(143,208,255,.30);color:#fff;border-color:rgba(143,208,255,.62)}' +
+'.ctb-enh .ctb-bar select{flex:1 1 96px;min-width:0;max-width:none;padding:4px 6px;border-radius:8px;border:1px solid rgba(143,208,255,.35);background:#132742;color:#eaf2ff;font-size:12px}' +
+'.ctb-enh .ctb-bar .tb{flex:0 0 auto;white-space:nowrap}' +
+'.ctb-enh .off{display:none!important}' +
 '.ctb-enh[data-kind="ctv9"]{position:sticky;top:0;border:1px solid rgba(143,208,255,.28);border-radius:10px;margin-bottom:12px;box-shadow:0 6px 18px rgba(0,0,0,.3)}' +
 '.ctb-enh .ctv9-pin{position:relative;top:auto;margin:0 0 7px;padding:7px 9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:9px;box-shadow:none}' +
 '.ctb-enh .ctv9-pin .ph{display:flex;align-items:center;gap:6px;font-size:11px;color:#8fd0ff;font-weight:700;margin-bottom:4px}' +
@@ -151470,7 +151493,11 @@ var CSS =
 '.ctb-enh .ctv9-pin .pk{margin-top:5px;padding-top:5px;border-top:1px dashed rgba(255,255,255,.14);font-size:12px;color:#ffd479}' +
 '.ctb-enh .ctv9-pin .pa{margin-top:3px;font-size:12px;color:#a9e6c8;white-space:pre-wrap;word-break:break-word;max-height:64px;overflow:auto}' +
 '.ctb-enh .ctv9-pin .px{margin-top:3px;font-size:12px;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;max-height:48px;overflow:auto}' +
-'.ctb-enh .ctv9-pin.folded .pq,.ctb-enh .ctv9-pin.folded .pk,.ctb-enh .ctv9-pin.folded .pa,.ctb-enh .ctv9-pin.folded .px{display:none}' +
+'.ctb-enh .ctv9-pin .pq{-webkit-line-clamp:3;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}' +
+/* 10.233：折叠＝只留题干一行 + 知识点，正确答案/我的作答点「展开」才显示 */
+'.ctb-enh .ctv9-pin.folded .pq{-webkit-line-clamp:1}' +
+'.ctb-enh .ctv9-pin.folded .pk{margin-top:2px;padding-top:2px;border-top:0;font-size:11.5px}' +
+'.ctb-enh .ctv9-pin.folded .pa,.ctb-enh .ctv9-pin.folded .px{display:none}' +
 '.ctb-enh .fold{cursor:pointer;color:#9fb4cd;font-size:11px;border:0;background:none;padding:0 4px}' +
 '.ctb-enh .ctv9-selbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#8fd0ff}' +
 '.ctb-enh .ctv9-selbar select{padding:5px 8px;border-radius:8px;border:1px solid rgba(143,208,255,.35);background:#132742;color:#eaf2ff;font-size:12.5px;max-width:260px}' +
@@ -151531,34 +151558,40 @@ function afterHeader(box) {
 
 /* ---------- 面板骨架 ---------- */
 var SEL_OPTS = [
-  ['src:local', '直接讲（默认·九项逐段朗读＋配图动图）'],
-  ['src:deep', 'AI 深度讲（深·广融合，联网生成）'],
-  ['view:c124', '从零基础讲（零起点慢速拆解）'],
-  ['view:c121', '板书逐步讲解（讲到哪写到哪）'],
-  ['view:c120', '数字人动画课堂'],
-  ['view:old', '原版九项播放器（朗读+投屏+追问+导出）'],
-  ['src:gk9', '高考要点九项（九项一个不少）'],
-  ['src:video', '真人网课（B站名师）'],
+  ['src:local', '直接讲（默认）'],
+  ['src:deep', 'AI 深度讲'],
+  ['view:c124', '从零基础讲'],
+  ['view:c121', '板书逐步'],
+  ['view:c120', '数字人动画'],
+  ['view:old', '原版播放器'],
+  ['src:gk9', '高考要点九项'],
+  ['src:video', '真人网课'],
   ['tool:cast', '投屏到电视']
 ];
-var folded = false, vizModeV = 'auto', selVal = 'src:local';
+/* 10.233：默认折叠（单行常驻），图示与问答按需展开 */
+var folded = true, vizOn = false, qaOn = false, vizModeV = 'auto', selVal = 'src:local';
 
 function skeleton() {
   var sel = '';
   for (var i = 0; i < SEL_OPTS.length; i++) {
     sel += '<option value="' + SEL_OPTS[i][0] + '"' + (SEL_OPTS[i][0] === selVal ? ' selected' : '') + '>' + E(SEL_OPTS[i][1]) + '</option>';
   }
-  return '<div class="ctv9-pin ce-pin" id="ctbPin">'
+  return '<div class="ctb-bar">'
+    + '<span class="lb">讲解方式 ▾</span><select id="ctbSel">' + sel + '</select>'
+    + '<button class="tb" id="ctbTgViz" type="button" onclick="CTB_PLAYER_ENHANCE.tgViz()">🖼 图示</button>'
+    + '<button class="tb" id="ctbTgQA" type="button" onclick="CTB_PLAYER_ENHANCE.tgQA()">💬 追问</button>'
+    + '<span id="ctbSelNote"></span>'
+    + '</div>'
+    + '<div class="ctv9-pin ce-pin folded" id="ctbPin">'
     + '<div class="ph"><span>📌 原题 · 原知识点（讲解全程置顶）</span><span class="sp"></span><span class="tg" id="ctbIdx">第 1 项</span>'
-    + '<button class="fold" type="button" onclick="CTB_PLAYER_ENHANCE.fold()">收起</button></div>'
+    + '<button class="fold" id="ctbFoldBtn" type="button" onclick="CTB_PLAYER_ENHANCE.fold()">展开</button></div>'
     + '<div class="pq" id="ctbStem"></div>'
     + '<div class="pk" id="ctbKp"></div>'
     + '<div class="pa" id="ctbAns"></div>'
     + '<div class="px" id="ctbMine"></div>'
     + '</div>'
-    + '<div class="ctv9-selbar"><label>讲解方式 ▾ <select id="ctbSel">' + sel + '</select></label><span id="ctbSelNote"></span></div>'
-    + '<div class="ctv9-viz" id="ctbViz"></div>'
-    + '<div class="ctv9-qa2" id="ctbQA2">'
+    + '<div class="ctv9-viz off" id="ctbViz"></div>'
+    + '<div class="ctv9-qa2 off" id="ctbQA2">'
     + '<div class="qt">💬 追问老师（讲解全程可用，不随切段消失）</div>'
     + '<div class="qi"><input id="ctbQ2In" placeholder="例如：这一步为什么要这样变形？" onkeydown="if(event.key===\'Enter\')CTB_PLAYER_ENHANCE.ask2()">'
     + '<button type="button" onclick="CTB_PLAYER_ENHANCE.ask2()">提问</button></div>'
@@ -151599,6 +151632,7 @@ function updatePin() {
   var eMy = $('ctbMine'); if (eMy) eMy.textContent = my ? ('✍️ 我的作答：' + my) : '';
   var eIdx = $('ctbIdx'); if (eIdx) eIdx.textContent = '第 ' + (i + 1) + '/' + (segs.length || 9) + ' 项';
   var pin = $('ctbPin'); if (pin) pin.classList.toggle('folded', !!folded);
+  var fb = $('ctbFoldBtn'); if (fb) fb.textContent = folded ? '展开' : '收起';
 }
 
 /* ---------- 图示 / 动图 ---------- */
@@ -151699,9 +151733,14 @@ function ask2() {
     + '\n我的作答：' + myOf(w) + '\n正确答案：' + ansOf(w)
     + '\n当前讲到（' + S(seg.k) + '）：' + S(seg.body).slice(0, 400);
   var shown = false;
+  /* 10.233：aiRecogChat 在未配 Key / 网络被拦时可能长时间不 settle，界面会永远停在「思考中…」。
+     加 14s 看门狗，超时直接走本地检索兜底，保证问答永远有回应。 */
+  var wd = null;
+  try { wd = W.setTimeout(function () { if (!shown) offline(); }, 14000); } catch (e) { }
   function done(t) {
     if (shown || !S(t).trim()) return;
     shown = true;
+    try { if (wd) W.clearTimeout(wd); } catch (e) { }
     if (out) { out.className = 'qo on'; out.textContent = S(t); }
   }
   function offline() {
@@ -151857,6 +151896,20 @@ function hook() {
 function pinFold() {
   folded = !folded;
   var p = $('ctbPin'); if (p) p.classList.toggle('folded', folded);
+  var b = $('ctbFoldBtn'); if (b) b.textContent = folded ? '展开' : '收起';
+}
+/* 10.233：图示 / 问答 独立开关，避免常驻占满舞台 */
+function tgViz(force) {
+  vizOn = (force === true) ? true : (force === false) ? false : !vizOn;
+  var v = $('ctbViz'); if (v) v.classList.toggle('off', !vizOn);
+  var b = $('ctbTgViz'); if (b) b.classList.toggle('on', vizOn);
+  if (vizOn) { var e = $('ctbViz'); if (e) e.removeAttribute('data-key'); updateViz(); }
+}
+function tgQA(force) {
+  qaOn = (force === true) ? true : (force === false) ? false : !qaOn;
+  var q = $('ctbQA2'); if (q) q.classList.toggle('off', !qaOn);
+  var b = $('ctbTgQA'); if (b) b.classList.toggle('on', qaOn);
+  if (qaOn) { var i = $('ctbQ2In'); if (i) { try { i.focus(); } catch (e) { } } }
 }
 function vizMode() {
   vizModeV = (vizModeV === 'auto') ? 'animate' : 'auto';
@@ -151882,8 +151935,8 @@ function boot() {
 
 W.CTB_PLAYER_ENHANCE = {
   fold: pinFold, vizMode: vizMode, ask2: ask2, applySel: applySel, selOptions: SEL_OPTS,
-  refresh: refresh, figFor: figFor, bili: bili, tag: K,
-  state: function () { return { folded: folded, vizMode: vizModeV, sel: selVal, kind: (hostOf() || {}).kind || '' }; }
+  refresh: refresh, figFor: figFor, bili: bili, tag: K, tgViz: tgViz, tgQA: tgQA,
+  state: function () { return { folded: folded, vizOn: vizOn, qaOn: qaOn, vizMode: vizModeV, sel: selVal, kind: (hostOf() || {}).kind || '' }; }
 };
 try {
   var c0 = C9();
