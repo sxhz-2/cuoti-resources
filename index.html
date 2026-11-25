@@ -126080,17 +126080,24 @@ function c128Segs(f, path, t, n) {
   /* ⑥⑦ 没有分步式子时，按解析的原句逐条分派，避免四段重复同一句答案 */
   var anaLines = String(f.analysis || '').split(/[。；\n]+/).map(function (x) { return x.trim(); })
     .filter(function (x) { return x.length > 6; });
-  var chain = [e1, e2, e3, e4].filter(function (x) { return !!x; });
+  /* 只把「过程式」的行当式子用；与最终答案完全相同的行剔除，否则会连着几段重复同一句 */
+  var chain = [e1, e2, e3, e4].filter(function (x) {
+    return !!x && String(x).replace(/\s/g, '') !== String(ans || '').replace(/\s/g, '');
+  });
 
-  /* ⑥ 列式 */
-  S.push(c128Blocks(chain.length
-    ? [c128Clip(e1, 180), c128Clip(e2, 180), c128Clip(e3, 180)]
-    : anaLines.slice(0, 3).map(function (x) { return c128Clip(x, 180); }), 5));
+  /* ⑥ 列式：有过程式用过程式，没有就用解析原句，再没有退回第一条条件 */
+  var sixRows = chain.length
+    ? [c128Clip(chain[0], 180), c128Clip(chain[1], 180), c128Clip(chain[2], 180)]
+    : (anaLines.length ? anaLines.slice(0, 3).map(function (x) { return c128Clip(x, 180); })
+                       : [c128Clip(cl[0] || q, 180)]);
+  S.push(c128Blocks(sixRows, 5));
 
-  /* ⑦ 计算链 */
-  S.push(c128Blocks(chain.length
-    ? [c128Clip(chain.join('  →  '), 400), c128Clip(eq[eq.length - 1] || '', 180)]
-    : anaLines.slice(3, 6).map(function (x) { return c128Clip(x, 200); }), 5));
+  /* ⑦ 计算链：过程式连成链；否则用解析后半段；再否则给出所求 */
+  var sevenRows = chain.length
+    ? [c128Clip(chain.join('  →  '), 400)]
+    : (anaLines.length > 3 ? anaLines.slice(3, 6).map(function (x) { return c128Clip(x, 200); })
+                           : [c128Clip(ask, 200)]);
+  S.push(c128Blocks(sevenRows, 5));
 
   /* ⑧ 验算 */
   S.push(c128Blocks(f6([c128Clip(ans, 220), units.length ? units.slice(0, 3).join('、') : '']), 4));
