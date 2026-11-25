@@ -126039,78 +126039,71 @@ function c128Segs(f, path, t, n) {
   if (!partC.length) partC = ['写出最终答案：' + c128Clip(f.ans || '见上面的推导', 30)];
 
   var S = [];
-   
+  /* 10.233：整段重写 —— 板书只写题目本身，不含任何模板标签与提示语 */
+  var f6 = function (arr) { return arr.filter(function (x) { return !!x; }); };
+
+  /* ① 读题：题干 / 条件 / 所求 */
+  var known = (cl.length > 1 ? cl.slice(0, cl.length - 1) : [cl[0]]).join('；');
   S.push(c128Blocks([
-    '【原题】' + c128Clip(q, 56),
-    '· 原样读一遍，先把题目真正问的圈出来。',
-    '【所求】' + c128Clip(ask, 38),
-    '· 已知与所求分两栏写，后面每一步都回到这两栏。'
-  ]));
-   
-  S.push(c128Blocks([
-    '【符号】' + (letters.length ? letters.join('、') : '题面以文字叙述为主'),
-    '· 每个字母第一次出现，先说出它代表题里哪个量。',
-    '【数值】' + (nums.length ? nums.join('、') : '题面没有单独写数字') +
-      '；单位：' + (units.length ? units.join('、') : '题面未标单位'),
-    '· 单位先写清楚，代公式时才不会串。'
-  ]));
-   
-  S.push(c128Blocks([
-    '【概念】' + c128Clip(names[0], 18) + '：' + c128Clip(d1[1] || '', 34),
-    '· 这条规矩在本题对应：' + c128Clip(cl[0] || q, 30),
-    '【预备式】' + c128Clip(eq[0] || (c128Clip(f.analysis, 34) || '先把题目要的量写成定义式'), 40),
-    '· 先照抄，不急着代数；用它的条件是' + c128Clip(d1[2] || '', 24)
-  ]));
-   
-  S.push(c128Blocks([
-    '【概念二】' + c128Clip(names[1] || names[0], 16) + '：' + c128Clip(d2[1] || '', 32),
-    '· 在本题里管的是：' + (letters.length ? letters.slice(0, 3).join('、') : c128Clip(q, 22)),
-    '【最容易错】' + c128Clip(d2[2] || '条件看漏、单位串了、符号代表谁没说清', 34),
-    '· 用之前先把适用条件逐条对一遍。'
-  ]));
-   
-  var cond = [];
-  for (var ci = 0; ci < cl.length && ci < 2; ci++) {
-    cond.push('【条件' + (ci + 1) + '】' + c128Clip(cl[ci], 36));
-    cond.push('· 把它写成能用的量或关系式，后面式子里要出现一次。');
+    c128Clip(q, 600),
+    (known && known !== q) ? c128Clip(known, 300) : '',
+    c128Clip(ask, 200)
+  ], 6));
+
+  /* ② 符号、数值、单位：成组出现才写，避免单个字母孤零零一行 */
+  S.push(c128Blocks(f6([
+    letters.length >= 2 ? letters.join('、') : '',
+    nums.length >= 2 ? nums.join('、') : '',
+    units.length >= 2 ? units.join('、') : '',
+    c128Clip(eq[0] || '', 160)
+  ]), 6));
+
+  /* ③ 概念：术语 + 定义 + 公式 */
+  var s3 = [];
+  for (var i3 = 0; i3 < terms.length && i3 < 3; i3++) {
+    var z = terms[i3];
+    s3.push(c128Clip(z.t + '：' + z.d, 140));
+    if (z.f && z.f !== '本术语为概念型，公式见知识点库「公式定理」栏') s3.push(c128Clip(z.f, 140));
   }
-  if (!cond.length) cond = ['【条件】题面只有一句，逐字拆成对象、数量、关系。'];
-  S.push(c128Blocks(cond, 5));
-   
-  var s6 = [];
-  for (var a = 0; a < partA.length && a < 2; a++) {
-    s6.push('【第' + (a + 1) + '步】' + c128Clip(partA[a], 44));
-    s6.push('· 依据：' + c128Clip(names[0], 14) + '；题面条件是' + c128Clip(cl[0] || q, 20) + '。');
-  }
-  if (!s6.length) { s6.push('【第1步】先写出题目所求量的定义式。'); s6.push('· 依据：题目最后一句问的是什么。'); }
-  S.push(c128Blocks(s6, 5));
-   
-  var s7 = [];
-  for (var b2 = 0; b2 < partB.length && b2 < 2; b2++) {
-    s7.push('【第' + (partA.length + b2 + 1) + '步】' + c128Clip(partB[b2], 44));
-    s7.push('· 把上一步代进来，只做这一个变形，括号和单位都不动。');
-  }
-  for (var c2 = 0; c2 < partC.length && c2 < 2; c2++) {
-    s7.push('【再往下】' + c128Clip(partC[c2], 44));
-    s7.push('· 整理到能一眼看出结果，再和题目所求对上。');
-  }
-  S.push(c128Blocks(s7, 5));
-   
-  S.push(c128Blocks([
-    '【结论】' + c128Clip(f.ans || eq[eq.length - 1] || '见上面最后一步', 44),
-    '· 把结果放回最后一条式子，左右要能对上。',
-    '【验算】单位：' + (units.length ? units.slice(0, 4).join('、') : '题面未标') + '；' + cl.length + ' 条条件都要用过。',
-    '【你的作答】' + c128Clip(diff, 40)
-  ]));
-   
-  S.push(c128Blocks([
-    '【错在哪】' + c128Clip(diff, 38),
-    '· 不是最后算错，是从这一处分叉；回到那一步重做。',
-    '【一遍复述】读题分栏 → 认符号单位 → 讲概念 → 拆条件 → 列式 → 逐步算 → 验算。',
-    '· 卡在哪一步，拖进度条回那一步，看黑板上写过的字。',
-    '【最后写下】' + c128Clip(f.ans || '见第⑧项结论', 40)
-  ], 5));
-  while (S.length < n) S.push(c128Blocks(['【补充】' + c128Clip(f.analysis || q, 40), '· 按同样的顺序再走一遍。']));
+  S.push(c128Blocks(s3, 6));
+
+  /* ④ 易错 */
+  var s4 = [];
+  for (var i4 = 0; i4 < terms.length && i4 < 3; i4++) if (terms[i4].u) s4.push(c128Clip(terms[i4].u, 110));
+  S.push(c128Blocks(s4.length ? s4 : [c128Clip(diff, 110)], 5));
+
+  /* ⑤ 条件逐条 */
+  var s5 = [];
+  for (var ci = 0; ci < cl.length && ci < 5; ci++) s5.push(c128Clip(cl[ci], 140));
+  S.push(c128Blocks(s5, 6));
+
+  /* ⑥⑦ 没有分步式子时，按解析的原句逐条分派，避免四段重复同一句答案 */
+  var anaLines = String(f.analysis || '').split(/[。；\n]+/).map(function (x) { return x.trim(); })
+    .filter(function (x) { return x.length > 6; });
+  var chain = [e1, e2, e3, e4].filter(function (x) { return !!x; });
+
+  /* ⑥ 列式 */
+  S.push(c128Blocks(chain.length
+    ? [c128Clip(e1, 180), c128Clip(e2, 180), c128Clip(e3, 180)]
+    : anaLines.slice(0, 3).map(function (x) { return c128Clip(x, 180); }), 5));
+
+  /* ⑦ 计算链 */
+  S.push(c128Blocks(chain.length
+    ? [c128Clip(chain.join('  →  '), 400), c128Clip(eq[eq.length - 1] || '', 180)]
+    : anaLines.slice(3, 6).map(function (x) { return c128Clip(x, 200); }), 5));
+
+  /* ⑧ 验算 */
+  S.push(c128Blocks(f6([c128Clip(ans, 220), units.length ? units.slice(0, 3).join('、') : '']), 4));
+
+  /* ⑨ 结论与错因：结论与上一段重复时，只留错因 */
+  var lastAns = c128Clip(f.ans || ans, 220);
+  S.push(c128Blocks(f6([
+    (String(diff || '').length >= 8 || !lastAns) ? c128Clip(diff, 130) : '',
+    lastAns
+  ]), 4));
+
+  var pad = 0;
+  while (S.length < n && pad < 12) { S.push(c128Clip(f.analysis || q || ans, 220)); pad++; }
   return S.slice(0, Math.max(1, n));
 }
 
@@ -127120,98 +127113,59 @@ function c128Segs(f, path, t, n) {
   var ans = f.ans || eq[eq.length - 1] || '见上面最后一步';
   var e1 = eq[0] || '', e2 = eq[1] || '', e3 = eq[2] || '', e4 = eq[3] || '';
   var S = [];
+  /* 10.233：整段重写 —— 板书只写题目本身，不含任何模板标签与提示语 */
+  var f6 = function (arr) { return arr.filter(function (x) { return !!x; }); };
 
-   
-  /* 10.233：读题段 = 题干 + 已知 + 所求，三行讲清，不再重复三遍同一句话 */
+  /* ① 读题：题干 / 条件 / 所求 */
   var known = (cl.length > 1 ? cl.slice(0, cl.length - 1) : [cl[0]]).join('；');
   S.push(c128Blocks([
-    c130Row(c128Clip(q, 600), ''),
-    (known && known !== q) ? c130Row('已知：' + c128Clip(known, 300), '') : '',
-    c130Row('所求：' + c128Clip(ask, 200), '')
+    c128Clip(q, 600),
+    (known && known !== q) ? c128Clip(known, 300) : '',
+    c128Clip(ask, 200)
   ], 6));
 
-   
-  S.push(c128Blocks([
-    c130Row('【先认符号】' + (letters.length ? letters.join('、') : '题面以文字叙述为主'), '每个字母第一次出现，先说出它代表题里哪个东西。'),
-    c130Row('【逐个点名】' + (letters.length ? c130Clip(letters.map(function (x) { return x + ' 代表题里的一个量'; }).join('；'), 56) : '本题没有单独写字母，按文字里的对象逐个点名'), '名字和量对不上，后面代公式一定串。'),
-    c130Row('【数值】' + (nums.length ? nums.join('、') : '题面没有单独写具体数字'), '数值先抄下来，代入时再动，抄错一个数整题全废。'),
-    c130Row('【单位】' + (units.length ? units.join('、') : '题面未标单位，按学科惯例补齐'), '单位跟数值一起走；最后答案的单位要能对上所求。'),
-    c130Row('【易混检查】' + (letters.length > 1 ? letters[0] + ' 与 ' + letters[1] + ' 不是同一个量' : '别把「已知」和「所求」写成同一个符号'), '这一步花十秒，能省后面十分钟的返工。')
-  ], 6));
+  /* ② 符号、数值、单位（题面有才写） */
+  S.push(c128Blocks(f6([
+    letters.length ? letters.join('、') : '',
+    nums.length ? nums.join('、') : '',
+    units.length ? units.join('、') : '',
+    c128Clip(eq[0] || '', 160)
+  ]), 6));
 
-   
+  /* ③ 概念：术语 + 定义 + 公式 */
   var s3 = [];
-  s3.push(c130Row('【讲概念】本项要用到 ' + terms.length + ' 个专业术语，一个一个说清楚', '概念不是背一遍就过，要放回本题那一句里认出来。'));
   for (var i3 = 0; i3 < terms.length && i3 < 3; i3++) {
     var z = terms[i3];
-    s3.push(c130Row('【术语' + (i3 + 1) + '·' + z.sub + '】' + z.t, '记住这个名字，考卷上它就是这么写的。'));
-    s3.push(c130Row('【定义】' + c128Clip(z.d, 58), '这句话要能用自己的话复述一遍才算懂。'));
-    s3.push(c130Row('【放回本题】' + c128Clip(cl[0] || q, 34), '题目里哪一句在说它；对不上就说明概念还没落地。'));
-    s3.push(c130Row('【易错】' + c128Clip(z.u, 50), '老师把最常见的翻车点先写出来，动笔前对一遍。'));
-    s3.push(c130Row('【公式】' + c128Clip(z.f || '本术语为概念型，公式见知识点库「公式定理」栏', 58), '把公式里每个符号对回定义，再核一遍适用条件。'));
+    s3.push(c128Clip(z.t + '：' + z.d, 140));
+    if (z.f && z.f !== '本术语为概念型，公式见知识点库「公式定理」栏') s3.push(c128Clip(z.f, 140));
   }
-  S.push(c128Blocks(s3, 8));
+  S.push(c128Blocks(s3, 6));
 
-   
-  var z2 = terms[3] || terms[1] || terms[0] || { t: names[1] || names[0], d: '一条把已知连到所求的规矩', u: '条件没对上就套公式' };
-  S.push(c128Blocks([
-    c130Row('【概念二】' + c128Clip(z2.t, 22) + '：' + c128Clip(z2.d, 44), '两个概念分工不同，别混用。'),
-    c130Row('【适用条件】' + c128Clip(z2.u, 50), '条件不成立时这条式子不能用，先逐条对一遍。'),
-    c130Row('【与本题对应】' + (letters.length ? letters.slice(0, 3).join('、') : c128Clip(q, 24)), '在本题里具体管的是这几个量。'),
-    c130Row('【预备式·照抄】' + c128Clip(e1 || f.analysis || '先把所求量写成定义式', 46), '先照抄定义式，一个数都不代；照抄能看清结构。'),
-    c130Row('【小测】这条式子在什么条件下才成立？', '心里答一句，答不出就回到上一帧再看定义。'),
-    c130Row('【检查】' + c128Clip(names[0], 16) + ' 的条件都用上了吗', '漏条件是这一项最常见的错。')
-  ], 7));
+  /* ④ 易错 */
+  var s4 = [];
+  for (var i4 = 0; i4 < terms.length && i4 < 3; i4++) if (terms[i4].u) s4.push(c128Clip(terms[i4].u, 110));
+  S.push(c128Blocks(s4.length ? s4 : [c128Clip(diff, 110)], 5));
 
-   
-  var s5 = [c130Row('【拆条件】把题面每句话翻成能用的量或关系式', '题目不会直接给式子，得自己一句一句翻。')];
-  for (var ci = 0; ci < cl.length && ci < 3; ci++) {
-    s5.push(c130Row('【条件' + (ci + 1) + '】' + c128Clip(cl[ci], 40), '原句照抄，别凭记忆改写。'));
-    s5.push(c130Row('【翻成式子】由「' + c128Clip(cl[ci], 18) + '」得到一条可用关系', '写进草稿的已知栏，后面式子里必须出现一次。'));
-  }
-  s5.push(c130Row('【隐含条件】' + (units.length ? '单位统一为 ' + units[0] : '题目默认的正方向 / 定义域 / 取值范围'), '没写在题面上但一定要用的，最容易漏。'));
-  S.push(c128Blocks(s5, 8));
+  /* ⑤ 条件逐条 */
+  var s5 = [];
+  for (var ci = 0; ci < cl.length && ci < 5; ci++) s5.push(c128Clip(cl[ci], 140));
+  S.push(c128Blocks(s5, 6));
 
-   
-  var s6 = [c130Row('【开始列式】规矩：一步只做一个动作，做完立刻检查', '跳步是算错的第一来源。')];
-  s6.push(c130Row('【第1步·写定义式】' + c128Clip(e1 || '把所求量写成基本定义式', 48), '做什么：不代数，只把结构与符号摆出来。'));
-  s6.push(c130Row('【检查1】式子里每个字母都在已知栏里认过了吗', '为什么：认过才敢往里代数。'));
-  s6.push(c130Row('【第2步·代入】' + c128Clip(e2 || '把题目给的条件代进定义式', 48), '做什么：只做代入，不合并、不约分。'));
-  s6.push(c130Row('【得到】' + c128Clip(e2 || '代入后的样子', 40), '写出来看一眼，数值和单位有没有抄错。'));
-  s6.push(c130Row('【第3步·一个变形】' + c128Clip(e3 || '对上式只做一个合法变形', 48), '为什么：一次只动一处，错了能立刻定位。'));
-  S.push(c128Blocks(s6, 7));
+  /* ⑥ 列式 */
+  S.push(c128Blocks([c128Clip(e1, 180), c128Clip(e2, 180), c128Clip(e3, 180)], 5));
 
-   
-  var s7 = [c130Row('【接着算】沿用第3步的结果，继续一步一步往下', '每一步都写「做什么 / 为什么 / 得到」。')];
-  if (e4) s7.push(c130Row('【第4步】' + c128Clip(e4, 48), '做什么：整理括号与同类项；为什么：让变化规律看得出来。'));
-  s7.push(c130Row('【第5步·整理】' + c128Clip(eq[eq.length - 1] || e3 || e2 || ans, 48), '只做化简，不跳等号；等号左右必须始终相等。'));
-  s7.push(c130Row('【关键一步】' + c128Clip(e2 || e3 || '把式子整理成能一眼看出结果的形式', 46), '这一步通常是全题的分水岭，慢一点写。'));
-  s7.push(c130Row('【得到】' + c128Clip(ans, 48), '先别急着交卷，回到所求栏对一下是不是题目问的那个量。'));
-  s7.push(c130Row('【逐步检查】等号链：' + c128Clip([e1, e2, e3].filter(Boolean).join(' → '), 48), '每一个箭头只做了一个动作，就说明没跳步。'));
-  S.push(c128Blocks(s7, 7));
+  /* ⑦ 计算链 */
+  var chain = [e1, e2, e3, e4].filter(function (x) { return !!x; });
+  S.push(c128Blocks([c128Clip(chain.join('  →  '), 400), c128Clip(eq[eq.length - 1] || '', 180)], 5));
 
-   
-  S.push(c128Blocks([
-    c130Row('【结论】' + c128Clip(ans, 50), '这就是要写进答题框的那一行。'),
-    c130Row('【验算·回代】把结果放回最后一条式子，左右要对得上', '对不上就顺着等号链往回找第一个不等的箭头。'),
-    c130Row('【验算·单位】' + (units.length ? units.slice(0, 3).join('、') : '按所求量的量纲补齐'), '单位对不上，数值再漂亮也是错的。'),
-    c130Row('【验算·条件】' + cl.length + ' 条条件是否都用过', '有没用上的条件，多半说明中间漏了一步。'),
-    c130Row('【本题答案（标准）】' + c128Clip(f.ans || ans, 46), '照标准答案核对，不是照自己的记忆。'),
-    c130Row('【第一处分叉】' + c128Clip(diff, 46), '你的作答从这里开始和标准答案不一样，回到那一步重做。')
-  ], 7));
+  /* ⑧ 验算 */
+  S.push(c128Blocks(f6([c128Clip(ans, 220), units.length ? units.slice(0, 3).join('、') : '']), 4));
 
-   
-  S.push(c128Blocks([
-    c130Row('【错因】' + c128Clip(diff, 44), '不是最后算错，是从这一处分叉。'),
-    c130Row('【一遍复述】读题分栏 → 认符号单位 → 讲概念 → 拆条件 → 列式 → 逐步算 → 验算', '按顺序说一遍，卡在哪一步就拖进度条回那一步。'),
-    c130Row('【术语回扣】' + terms.slice(0, 3).map(function (z) { return z.t; }).join('、'), '这三个词今天要能自己讲出定义。'),
-    c130Row('【黑板上写过的都留着】不用往回翻，拖进度条即可', '看不懂就停，再听一遍、再看一遍。'),
-    c130Row('【最后写下】' + c128Clip(f.ans || ans, 48), '下课前把这一行抄进答题框。')
-  ], 6));
+  /* ⑨ 结论与错因 */
+  S.push(c128Blocks(f6([c128Clip(f.ans || ans, 220), c128Clip(diff, 130)]), 4));
 
-  while (S.length < n) S.push(c128Blocks([
-    c130Row('【补充】' + c128Clip(f.analysis || q, 46), '按同样的顺序再走一遍。')
-  ]));
+  var pad = 0;
+  while (S.length < n && pad < 12) { S.push(c128Clip(f.analysis || q || ans, 220)); pad++; }
   return S.slice(0, Math.max(1, n));
 }
 
