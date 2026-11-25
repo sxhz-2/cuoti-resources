@@ -12646,7 +12646,7 @@ window.addEventListener('load', function(){
   }
 
    
-  var ORDER9=['题目','核心概念','公式定理','关键步骤','易错点','同类模型','秒杀技巧','错误分析','变式'];
+  var ORDER9=['题目','题目回顾','核心概念','公式定理','关键步骤','最终答案','答案','得出答案','易错点','同类模型','秒杀技巧','错误分析','错因分析','变式'];
   function strengthSegs(segs, w){
     var kd=null;
     try{ if(window.getKnowledgeDetail) kd=getKnowledgeDetail(w.subject, w.knowledge||w.topic); }catch(e){}
@@ -12743,7 +12743,7 @@ var CACHE_KEY = 'ai_explain_cache_v1';
 var CACHE_MAX = 36;
 var CACHE_TTL = 30 * 24 * 3600 * 1000;
 var TIMEOUT_MS = 150000;       
-var ORDER9 = ['题目', '核心概念', '公式定理', '关键步骤', '易错点', '同类模型', '秒杀技巧', '错误分析', '变式'];
+var ORDER9=['题目','题目回顾','核心概念','公式定理','关键步骤','最终答案','答案','得出答案','易错点','同类模型','秒杀技巧','错误分析','错因分析','变式'];
 
 var S = {
   segs: [], i: 0, playing: false, rate: 1, charIn: 0, timer: null, spk: true,
@@ -12919,7 +12919,7 @@ function aiToScenes(w, ai) {
     if (ai.coreConcept) sc.push({ tag: '核心概念', title: '💡 核心概念', body: ai.coreConcept });
     if (ai.formulas) sc.push({ tag: '公式定理', title: '📐 公式定理', body: ai.formulas });
     (ai.keySteps || []).forEach(function (s, i) { sc.push({ tag: '关键步骤', title: '🪜 关键步骤 ' + (i + 1), body: s }); });
-    if (ai.answer) sc.push({ tag: '关键步骤', title: '🪜 得出答案', body: ai.answer });
+    if (ai.answer) sc.push({ tag: '最终答案', title: '🎯 最终答案', body: ai.answer });
     (ai.pitfalls || []).forEach(function (p) { sc.push({ tag: '易错点', title: '⚠️ 易错点', body: p }); });
     (ai.similarModels || []).forEach(function (p) { sc.push({ tag: '同类模型', title: '🔁 同类模型', body: p }); });
     (ai.quickTricks || []).forEach(function (p) { sc.push({ tag: '秒杀技巧', title: '⚡ 秒杀技巧', body: p }); });
@@ -69270,17 +69270,25 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     var cur = null; try { cur = JSON.parse(localStorage.getItem('aiRecog_cfg') || 'null'); } catch (e) { }
     var hasKey = false;
     if (cur && cur.keys) { for (var k in cur.keys) { if (String(cur.keys[k] || '').trim()) { hasKey = true; break; } } }
-    if (hasKey) return false;  // 本地已有密钥，以本地为准
+    var same = false;
+    try { same = JSON.stringify(cur) === JSON.stringify(cfg); } catch (e) { }
     try {
       localStorage.setItem('aiRecog_cfg', JSON.stringify(cfg));
+      /* 10.232：拉取改为「云端优先」——用户主动点「下载」即明确要把配置同步过来，
+         不再因本地已有密钥就静默拒写（旧逻辑让设备二永远同步不到 AI 参数）。
+         同时记录是否覆盖了不同的本地配置，调用方据此如实提示。 */
+      try { if (W.CTB_AI_META && typeof W.CTB_AI_META.save === 'function') W.CTB_AI_META.save(cfg); } catch (e) { }
+      W.__CTB_APPLYCFG_INFO__ = { hadLocal: hasKey, overwrote: hasKey && !same };
+      try { W.dispatchEvent(new Event('ctb:aicfg:pulled')); } catch (e) { }
       if (!silent) { try { W.dispatchEvent(new Event('ctb:aicfg:synced')); } catch (e) { } }
       return true;
     } catch (e) { return false; }
   }
   function pullEnc(encStr, silent) {
     return open(encStr).then(function (cfg) {
-      if (cfg) { var ok = applyCfg(cfg, silent); return { ok: ok, cfg: cfg, needPass: false }; }
-      return { ok: false, needPass: !getPass() };
+      if (cfg) { var ok = applyCfg(cfg, silent); return { ok: !!ok, cfg: cfg, needPass: false, badPass: false }; }
+      /* 有口令却解不出来 = 两端口令不一致；没口令 = 需要先设口令 */
+      return { ok: false, needPass: !getPass(), badPass: !!getPass() };
     });
   }
   function status() {
@@ -69569,49 +69577,54 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
    
   function push(manual) {
     if (g._syncing) { if (manual) toast('同步进行中，请稍候'); return Promise.resolve(false); }
-    /* 10.218: push 前先异步重算密文（PBKDF2+AES-GCM），确保 payload 带最新加密串 */
-    if (W.CTB218 && W.CTB218.warm) { try { W.CTB218.warm(); } catch (e) { } }
     var uid = getUid();
     if (!uid) { if (manual) toast('请先注册并登录云账号'); return Promise.resolve(false); }
     var sp = initSupa(); if (!sp) { if (manual) toast('云连接失败'); return Promise.resolve(false); }
     g._syncing = true; updChip('上传中…', null);
-    var tombs = markChanged();
-    var rows = wrongs().map(function (w) {
-      return {
-        user_id: uid, item_id: String(w.id), subject: w.subject || '',
-        updated_at: new Date(w._u || Date.now()).toISOString(),
-        deleted: false, data: slim(w)
+    /* 10.218 + 10.231：push 前必须【异步等待】密文重算完成再构造 payload。
+       旧版 warm() 是同步触发、不 await，紧接着 cached() 读到的是上一轮旧值/空值，
+       导致"已启用加密"但上传的 aiCfgEnc 是旧密文或空 → 其它设备解密失败。
+       修复：先把 PBKDF2+AES-GCM 的加密 Promise 串进调用链，拿到最新密文再组装 stateRow。 */
+    var warmP = (W.CTB218 && W.CTB218.warm) ? Promise.resolve(W.CTB218.warm()) : Promise.resolve(null);
+    return warmP.then(function () {
+      var tombs = markChanged();
+      var rows = wrongs().map(function (w) {
+        return {
+          user_id: uid, item_id: String(w.id), subject: w.subject || '',
+          updated_at: new Date(w._u || Date.now()).toISOString(),
+          deleted: false, data: slim(w)
+        };
+      });
+      (tombs || []).forEach(function (id) {
+        rows.push({ user_id: uid, item_id: id, subject: '', updated_at: new Date().toISOString(), deleted: true, data: { id: id } });
+      });
+      var stateRow = {
+        user_id: uid, updated_at: new Date().toISOString(),
+        payload: {
+          papers: slimArr(window.uploadedPapers || []),
+          photos: slimArr(window.uploadedPhotos || []),
+          device: ls(K.dev), ts: Date.now(),
+          /* 10.210：使用台账（最近 7 天 · 每天最多 80 条精简记录）挂在 state 上一并上传，
+             与错题同步共用同一次请求，不额外增加连接数与往返。 */
+          usage: (window.CTB210 && window.CTB210.export) ? window.CTB210.export(7) : null,
+          /* 10.218：AI 参数加密同步 —— 只上传密文，明文与口令永不离开本机。
+             10.231：此刻 warm() 已 resolve，cached() 读到的是刚算好的最新密文；
+             没设口令或本机无 AI 参数则上传 null（不泄露明文）。 */
+          aiCfgEnc: (W.CTB218 && W.CTB218.cached) ? W.CTB218.cached() : null
+        }
       };
-    });
-    (tombs || []).forEach(function (id) {
-      rows.push({ user_id: uid, item_id: id, subject: '', updated_at: new Date().toISOString(), deleted: true, data: { id: id } });
-    });
-    var stateRow = {
-      user_id: uid, updated_at: new Date().toISOString(),
-      payload: {
-        papers: slimArr(window.uploadedPapers || []),
-        photos: slimArr(window.uploadedPhotos || []),
-        device: ls(K.dev), ts: Date.now(),
-        /* 10.210：使用台账（最近 7 天 · 每天最多 80 条精简记录）挂在 state 上一并上传，
-           与错题同步共用同一次请求，不额外增加连接数与往返。 */
-        usage: (window.CTB210 && window.CTB210.export) ? window.CTB210.export(7) : null,
-        /* 10.218：AI 参数加密同步 —— 只上传密文，明文与口令永不离开本机。
-           口令由用户在本机设置（ctb_ai_sync_pass），PBKDF2 派生密钥 + AES-GCM 加密。
-           密文在 push 前由 prePush() 预热到缓存；没设口令则上传 null（不泄露明文）。 */
-        aiCfgEnc: (W.CTB218 && W.CTB218.cached) ? W.CTB218.cached() : null
-      }
-    };
-    var p1 = rows.length ? syncWithTimeout(sp.from(T_ITEM).upsert(rows, { onConflict: 'user_id,item_id', ignoreDuplicates: false }), 25000) : Promise.resolve({ error: null });
-    return p1.then(function (r1) {
-      if (r1 && r1.error) throw r1.error;
-      return syncWithTimeout(sp.from(T_STATE).upsert([stateRow], { onConflict: 'user_id', ignoreDuplicates: false }), 20000);
-    }).then(function (r2) {
-      if (r2 && r2.error) throw r2.error;
-      ls(K.last, String(Date.now()));
-      g._syncing = false; updChip('已同步 ' + new Date().toLocaleTimeString(), true);
-      if (manual) toast('上传成功 ✅（错题 ' + wrongs().length + ' 条）');
-      if (window.__CTBSYNC_RENDER__) window.__CTBSYNC_RENDER__();
-      return true;
+      var p1 = rows.length ? syncWithTimeout(sp.from(T_ITEM).upsert(rows, { onConflict: 'user_id,item_id', ignoreDuplicates: false }), 25000) : Promise.resolve({ error: null });
+      return p1.then(function (r1) {
+        if (r1 && r1.error) throw r1.error;
+        return syncWithTimeout(sp.from(T_STATE).upsert([stateRow], { onConflict: 'user_id', ignoreDuplicates: false }), 20000);
+      }).then(function (r2) {
+        if (r2 && r2.error) throw r2.error;
+        ls(K.last, String(Date.now()));
+        g._syncing = false; updChip('已同步 ' + new Date().toLocaleTimeString(), true);
+        if (manual) toast('上传成功 ✅（错题 ' + wrongs().length + ' 条）');
+        if (window.__CTBSYNC_RENDER__) window.__CTBSYNC_RENDER__();
+        return true;
+      });
     }).catch(function (e) {
       g._syncing = false;
       var msg = String((e && e.message) || e || '');
@@ -69661,9 +69674,14 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
             if (st.payload.aiCfgEnc && W.CTB218 && W.CTB218.pullEnc) {
               try {
                 W.CTB218.pullEnc(st.payload.aiCfgEnc).then(function (rr) {
-                  if (rr && rr.ok) { if (manual) toast('已用本机口令解密 AI 参数 ✅'); }
+                  if (rr && rr.ok) {
+                    var info = W.__CTB_APPLYCFG_INFO__ || {};
+                    if (manual) toast(info.overwrote ? 'AI 参数已同步并覆盖本机旧配置 ✅' : '已用本机口令解密 AI 参数 ✅');
+                    try { if (window.__CTBSYNC_RENDER__) window.__CTBSYNC_RENDER__(); } catch (e) { }
+                  }
                   else if (rr && rr.needPass && manual) toast('云端有加密的 AI 参数，请先在云同步页设置同步口令');
-                  else if (manual) toast('AI 参数解密失败：口令与配置设备不一致');
+                  else if (rr && rr.badPass && manual) toast('AI 参数解密失败：本机口令与上传设备不一致，请核对口令（需逐字一致）');
+                  else if (manual) toast('AI 参数未写入本机，请重试或检查云端是否有密文');
                 });
               } catch (e) { }
             }
@@ -69767,6 +69785,15 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         }).catch(function (e) { no('数据表', e.message); });
       })
       .then(function () {
+        /* 10.231：AI 参数加密同步自检（针对"已启用加密但同步不了"） */
+        if (W.CTB218 && W.CTB218.status) {
+          var cs = W.CTB218.status();
+          if (!cs.crypto) no('AI 参数加密', '当前环境不支持加密（无 crypto.subtle），无法同步 AI 参数');
+          else if (!cs.pass) no('AI 参数加密', '未设置同步口令 → AI 参数不会上云');
+          else if (!cs.cfg) no('AI 参数加密', '已设口令但本机暂无 AI 参数可加密');
+          else if (!cs.encCached) no('AI 参数加密', '口令已设且本机有 AI 参数，但密文缓存未就绪 → 点一次「上传」即可生成并上传');
+          else ok('AI 参数加密', '密文已就绪，将随「上传」发送到云端；其它设备用同一口令登录即可解密');
+        }
         var el = document.getElementById('ctbDiagOut');
         if (el) el.innerHTML = '<pre style="margin:0;white-space:pre-wrap;font-size:12px;line-height:1.7;">' + esc(L.join('\n')) + '</pre>';
         renderPage();
@@ -70538,11 +70565,17 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       if (!v) { toast('请先输入口令'); return; }
       if (v.length < 6) { toast('口令至少 6 位'); return; }
       if (!W.CTB218 || !W.CTB218.hasCrypto()) { toast('当前环境不支持加密'); return; }
+      /* 10.231：setPass 返回 warm() 的加密 Promise，必须等它真正写完密文缓存再报成功，
+         旧版在 warm 未完成时就提示"密文已生成"，与 push 竞态同源。 */
       Promise.resolve(W.CTB218.setPass(v)).then(function () {
+        var st = W.CTB218.status ? W.CTB218.status() : null;
         var m = byId('aiSecMsg');
-        if (m) m.innerHTML = '<span style="color:#1e8449;">✅ 口令已设置 · 密文已生成，下次同步自动上传</span>';
+        var ready = st && st.encCached && st.cfg;
+        if (m) m.innerHTML = ready
+          ? '<span style="color:#1e8449;">✅ 口令已设置 · 本机 AI 参数已加密，下次「上传」自动带上密文</span>'
+          : '<span style="color:#b8860b;">口令已设置 · 本机暂无 AI 参数可加密（填入 Key/模型后再保存一次即自动加密上传）</span>';
         var ip = byId('aiSecPass'); if (ip) ip.value = '';
-        toast('加密口令已保存 ✅（口令只在本机，不会上传）');
+        toast(ready ? '加密口令已保存，本机 AI 参数已加密 ✅' : '加密口令已保存 ✅（本地尚无 AI 参数可加密）');
       });
     });
     bind('aiSecClear', function () {
@@ -73432,6 +73465,7 @@ else document.addEventListener('DOMContentLoaded',mountFab);
       '<button id="ctv9Spk" onclick="CTV9.spk()">🔊 朗读开</button>' +
       '<button onclick="CTV9.videos()">📺 真人视频</button>' +
       '<button onclick="CTV9.exportWord()">📄 导出</button>' +
+      '<button onclick="CTV9.skin()">🎭 呈现方式</button>' +
       '</div>' +
       '<div class="ctv9-qa"><input id="ctv9Q" placeholder="追问老师：这一步为什么这样变形？" onkeydown="if(event.key===\'Enter\')CTV9.ask()">' +
       '<button onclick="CTV9.ask()">提问</button></div>' +
@@ -119571,7 +119605,11 @@ function boardDraw(text, p) {
 }
 function stageEnsure() {
   var el = D.getElementById('c120Stage');
-  if (el) return el;
+  /* 10.232：#c120Stage 被 C120 / C121 共用，不能拿到就返回。
+     若现存节点是 C121 的板书壳（c121-modal），必须先销毁再重建，
+     否则数字人渲染会写进板书壳里 → 表现为点数字人白屏/串皮。 */
+  if (el && el.className.indexOf('c120-modal') >= 0) return el;
+  if (el && el.parentNode) el.parentNode.removeChild(el);
   var d = D.createElement('div');
   d.innerHTML = '<div class="c120-modal" id="c120Stage"><div class="c120-box">' +
     '<div class="c120-hd"><span id="c120Title">九项视频解析 · 数字人课堂</span>' +
@@ -151137,4 +151175,723 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
   boot();
 })();
 </script>
+<script>
+/* ==== CTB_VIDEO_SKIN_BEGIN ==== */
+(function(){
+"use strict";
+var W = window, D = document;
+function curW(){
+  try { var S = W.CTV9 && W.CTV9.state; return (S && S.w) || null; } catch(e){ return null; }
+}
+function tip(m){ try { if (W.showToast) W.showToast(m, 'error'); } catch(e){} }
+function skinMenu(){
+  var w = curW();
+  if (!w) { tip('请先打开一道题的九项视频解析'); return; }
+  var old = D.getElementById('ctbVideoSkinMenu');
+  if (old && old.parentNode) { old.parentNode.removeChild(old); return; }
+  var d = D.createElement('div');
+  d.id = 'ctbVideoSkinMenu';
+  d.style.cssText = 'position:fixed;z-index:100070;right:16px;bottom:16px;width:236px;background:#111c2c;color:#eaf2ff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:12px;box-shadow:0 10px 34px rgba(0,0,0,.55);font:13px/1.6 system-ui,sans-serif';
+  var btn = 'display:block;width:100%;margin:6px 0;padding:9px 10px;border:0;border-radius:9px;background:rgba(255,255,255,.1);color:#eaf2ff;font-size:13px;text-align:left;cursor:pointer';
+  d.innerHTML = '<div style="font-weight:700;margin-bottom:6px">呈现方式 · 同一份九项讲解</div>'
+    + '<button type="button" data-skin="old" style="' + btn + '">📖 原版九项播放器</button>'
+    + '<button type="button" data-skin="c120" style="' + btn + '">🧑 数字人课堂</button>'
+    + '<button type="button" data-skin="c121" style="' + btn + '">✍️ 板书逐步讲解</button>'
+    + '<button type="button" data-skin="c124" style="' + btn + '">🌱 零基础直讲</button>'
+    + '<div style="color:#9fb4cd;font-size:11px;margin-top:8px">四种呈现共用同一份九项文稿；用各模块自带的「切回原版播放器」返回。</div>';
+  D.body.appendChild(d);
+  d.addEventListener('click', function(e){
+    var t = e.target;
+    while (t && t !== d && (!t.getAttribute || !t.getAttribute('data-skin'))) t = t.parentNode;
+    if (!t || t === d) return;
+    var s = t.getAttribute('data-skin');
+    if (d.parentNode) d.parentNode.removeChild(d);
+    try { if (W.CTV9 && W.CTV9.close) W.CTV9.close(); } catch(err){}
+    var ww = w;
+    if (s === 'old') {
+      try { if (W.CTV9 && W.CTV9.open) W.CTV9.open(ww.id || ww.qid); } catch(err){ tip('原版播放器打开失败'); }
+      return;
+    }
+    if (s === 'c120') {
+      try {
+        if (!W.C120 || !W.C120.openPanel) throw new Error('missing');
+        W.C120.openPanel(ww); W.C120.openStage();
+      } catch(err){ tip('数字人课堂未就绪'); }
+      return;
+    }
+    if (s === 'c121') {
+      try { if (!W.C121 || !W.C121.openStage) throw new Error('missing'); W.C121.openStage(ww); }
+      catch(err){ tip('板书讲解未就绪'); }
+      return;
+    }
+    if (s === 'c124') {
+      try { if (!W.C124 || !W.C124.open) throw new Error('missing'); W.C124.open(ww); }
+      catch(err){ tip('零基础直讲未就绪'); }
+      return;
+    }
+  });
+}
+function install(){
+  try { if (W.CTV9 && typeof W.CTV9 === 'object') W.CTV9.skin = skinMenu; } catch(e){}
+}
+install();
+setTimeout(install, 400); setTimeout(install, 2000);
+})();
+/* ==== CTB_VIDEO_SKIN_END ==== */
+</script>
+<script>
+/* ==== CTB_GK9_TO_CTV9_BEGIN ==== */
+(function (W, D) {
+'use strict';
+if (W.__CTB_GK9CTV9__) return; W.__CTB_GK9CTV9__ = 1;
+var VER = '10.227-gk9-to-ctv9-v1';
+
+/* 高考要点正文并入 CTV9 主内核：标题统一为 CTV9 九项，正文按位置对应保留 */
+var CTV9_NINE = ['题目回顾', '核心概念', '公式定理', '关键步骤', '最终答案', '易错点', '同类模型', '秒杀技巧', '错因分析'];
+var GK_ICON = ['📌', '🎯', '📐', '🪜', '✅', '⚠️', '🔁', '⚡', '🔍'];
+
+function S(v) { return v == null ? '' : String(v); }
+
+function curWrong() {
+  var w = null;
+  try { if (W.ST && W.ST.L && W.ST.idx >= 0) w = W.ST.L[W.ST.idx] || null; } catch (e) { }
+  if (!w) { try { var r = W.__CTB_NREG__ || []; w = r[r.length - 1] || null; } catch (e2) { } }
+  return w || {};
+}
+
+/* 高考要点九段正文：优先取 10.84 题库字段版，缺失时退到 10.190 课本术语版 */
+function gkSegs(w) {
+  var raw = null;
+  try { if (W.CTV9_1084 && typeof W.CTV9_1084.segs === 'function') raw = W.CTV9_1084.segs(w); } catch (e) { }
+  if (!raw || raw.length < 9) {
+    try { if (W.CTB_GAOKAO9 && typeof W.CTB_GAOKAO9.segs === 'function') raw = W.CTB_GAOKAO9.segs(w); } catch (e2) { }
+  }
+  if (!raw || raw.length < 9) return null;
+  return raw;
+}
+
+/* 归一化成 CTV9 段格式：{k, body, icon}；两种旧格式 {body} 与 {b} 都兼容 */
+function toCtv9Segs(raw) {
+  var out = [];
+  for (var i = 0; i < 9; i++) {
+    var s = raw[i] || {};
+    var body = S(s.body || s.b || s.t || '');
+    out.push({ k: CTV9_NINE[i], body: body, icon: GK_ICON[i] });
+  }
+  return out;
+}
+
+function isGK() {
+  try {
+    var s = D.getElementById('c115Src'); if (!s) return false;
+    var v = S(s.value); return v === 'gaokao9' || v === 'video9';
+  } catch (e) { return false; }
+}
+
+var lastSig = '', lastAt = 0;
+function openInCTV9(w) {
+  w = w || curWrong();
+  var pre = toCtv9Segs(gkSegs(w) || []);
+  if (pre.length < 9) return false;
+  var sig = S(w.stem || w.question || w.q || '').slice(0, 120) + '|' + S(w.kp || w.knowledge || '');
+  var now = Date.now();
+  /* 10.192 补丁在 60/180/420/900/1800/3200ms 反复回调，同一题只开一次 */
+  if (sig === lastSig && now - lastAt < 2500) return true;
+  lastSig = sig; lastAt = now;
+  try { if (W.CTV9 && typeof W.CTV9.close === 'function') W.CTV9.close(); } catch (e) { }
+  try { if (W.CTV9 && typeof W.CTV9.open === 'function') { W.CTV9.open(w, { preSegs: pre, autoplay: true }); return true; } } catch (e2) { }
+  return false;
+}
+
+/* 入口一：10.185 / 10.189 / 10.192 都经 CTV9_1084.open(meta) */
+try {
+  var V = W.CTV9_1084;
+  if (V && typeof V.open === 'function' && !V.open.__gk9ctv9) {
+    var oldOpen = V.open;
+    V.open = function (meta) {
+      try { if (openInCTV9(meta || curWrong())) return { ok: true, channel: 'ctv9' }; } catch (e) { }
+      return oldOpen.apply(V, arguments);
+    };
+    V.open.__gk9ctv9 = 1;
+  }
+} catch (e) { }
+
+/* 入口二：10.190 对外 API CTB_GAOKAO9.open / play */
+try {
+  var G = W.CTB_GAOKAO9;
+  if (G && !G.__gk9ctv9) {
+    if (typeof G.open === 'function') {
+      G.open = function () { try { openInCTV9(curWrong()); } catch (e) { } return { ok: true, channel: 'ctv9' }; };
+    }
+    if (typeof G.play === 'function') {
+      G.play = function () { try { openInCTV9(curWrong()); } catch (e) { } };
+    }
+    G.__gk9ctv9 = 1;
+  }
+} catch (e) { }
+
+/* 兜底：10.190 的 change 监听直接调内部函数开 ctb190Mask，外部无法替换，只能事后纠正 */
+var ticks = 0;
+try {
+  W.setInterval(function () {
+    try {
+      if (!isGK()) { ticks = 0; return; }
+      var m = D.getElementById('ctb190Mask');
+      if (m && m.style && S(m.style.display) === 'flex') {
+        m.style.display = 'none';
+        if (ticks < 8) { ticks++; openInCTV9(curWrong()); }
+      }
+    } catch (e) { }
+  }, 250);
+} catch (e) { }
+
+W.__CTB_GK9CTV9_API = {
+  version: VER,
+  open: function () { return openInCTV9(curWrong()); },
+  segs: function (w) { return toCtv9Segs(gkSegs(w || curWrong()) || []); },
+  titles: CTV9_NINE.slice(0)
+};
+})(window, document);
+/* ==== CTB_GK9_TO_CTV9_END ==== */
+</script>
+<script>
+/* ==== CTB_PLAYER_ENHANCE_BEGIN ==== */
+(function (W, D) {
+"use strict";
+if (W.__CTB_PLAYER_ENHANCE2__) return;
+W.__CTB_PLAYER_ENHANCE2__ = 1; W.__CTB_PLAYER_ENHANCE__ = 1;
+var K = 'CTB_PLAYER_ENHANCE';
+var NINE = ['题目回顾', '核心概念', '公式定理', '关键步骤', '最终答案', '易错点', '同类模型', '秒杀技巧', '错因分析'];
+var ICON = ['📌', '🎯', '📐', '🪜', '✅', '⚠️', '🔁', '⚡', '🔍'];
+
+function S(v) { return v == null ? '' : String(v); }
+function E(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function $(id) { return D.getElementById(id); }
+function toast(m, t) { try { if (W.showToast) W.showToast(m, t || ''); } catch (e) { } }
+function C9() { return W.CTV9 || null; }
+
+/* ---------- 当前错题：多路兜底（真实入口不一定是 CTV9） ---------- */
+var CURW = null;
+function pickW(w) {
+  if (w && typeof w === 'object' && (w.id != null || w.stem || w.q || w.question || w.kp)) CURW = w;
+  return CURW;
+}
+function findW(id) {
+  try { var a = W.wrongs || []; for (var i = 0; i < a.length; i++) if (S(a[i] && a[i].id) === S(id)) return a[i]; } catch (e) { }
+  return null;
+}
+function curW() {
+  if (CURW) return CURW;
+  try { var c = C9(), s = c && c.state; if (s && s.w && typeof s.w === 'object') return (CURW = s.w); } catch (e) { }
+  try { if (W.ST && W.ST.L && W.ST.idx >= 0 && W.ST.L[W.ST.idx]) return (CURW = W.ST.L[W.ST.idx]); } catch (e) { }
+  try { var a = W.wrongs || W.__CTB_NREG__ || []; if (a.length) return (CURW = a[a.length - 1]); } catch (e) { }
+  return {};
+}
+function fld(w, keys) {
+  for (var i = 0; i < keys.length; i++) { var v = w && w[keys[i]]; if (v != null && S(v).trim()) return S(v); }
+  return '';
+}
+function stemOf(w) { return fld(w, ['stem', 'question', 'q', 'text', 'title', '题干']); }
+function kpOf(w) { return fld(w, ['kp', 'knowledge', 'topic', 'chapter', '知识点']); }
+function myOf(w) { return fld(w, ['my', 'myAnswer', 'myAns', '我的作答']); }
+function subjOf(w) { return fld(w, ['subject', 'subj', '科目']); }
+function ansOf(w) {
+  try { if (W.CTB_ANS && W.CTB_ANS.ansFull) { var a = W.CTB_ANS.ansFull(w); if (S(a).trim()) return S(a); } } catch (e) { }
+  return fld(w, ['ans', 'correctAnswer', 'answer', 'a', '正确答案']);
+}
+function imgOf(w) {
+  try { if (W.CTB_QA && W.CTB_QA.imgOf) { var v = W.CTB_QA.imgOf(w); if (v) return v; } } catch (e) { }
+  return fld(w, ['img', 'dataUrl', 'figure']);
+}
+function kdOf(w) { try { if (typeof W.kdOf === 'function') return W.kdOf(w) || {}; } catch (e) { } return {}; }
+
+/* ---------- 九项文稿：CTV9 现行 → 高考要点 → 10.84 题库 → 本地字段兜底 ---------- */
+function localSegs(w) {
+  var kd = kdOf(w), my = myOf(w), ans = ansOf(w), kp = kpOf(w);
+  var g = function () { for (var i = 0; i < arguments.length; i++) { var v = arguments[i]; if (v && S(v).trim()) return S(v); } return ''; };
+  var arr = [
+    g(stemOf(w), '（题干为空：请回到错题详情补全题干后重讲）'),
+    g(kd.concept, kp ? ('围绕「' + kp + '」先明确研究对象与已知条件，再确定要求的量。') : '先明确研究对象与已知条件，再确定要求的量。'),
+    g(kd.formula, '把题干条件逐条写成等式或不等关系，标清每个符号含义与单位。'),
+    g(kd.steps, w && w.analysis, '第一步 读题圈条件；第二步 选模型/公式；第三步 代入计算；第四步 检验结果是否合理。'),
+    g(ans, '（答案未录入）'),
+    g(kd.error, my ? ('你写的是「' + my + '」，常见错因：条件漏用、符号写反、单位未统一。') : '常见错因：条件漏用、符号写反、单位未统一、审题跳步。'),
+    g(kd.model, '同类模型：换数字、换问法，解法骨架不变。'),
+    g(kd.quick, '秒杀思路：先看选项量级与符号，再用特殊值/极端值快速排除。'),
+    g(kd.error, my ? ('错因定位：从「' + my + '」到正确答案，断在哪一步要单独写出来。') : '错因定位：把出错那一步单独抄一遍，标出原因。')
+  ];
+  var out = [];
+  for (var k = 0; k < 9; k++) out.push({ k: NINE[k], body: arr[k] || '', icon: ICON[k] });
+  return out;
+}
+function segsOf(w) {
+  try {
+    var c = C9(), s = c && c.state;
+    if (s && s.segs && s.segs.length >= 3 && (!w || !s.w || S(s.w.id) === S(w.id))) return s.segs;
+  } catch (e) { }
+  try { var g2 = W.__CTB_GK9CTV9_API; if (g2 && typeof g2.segs === 'function') { var a = g2.segs(w); if (a && a.length >= 9) return a; } } catch (e) { }
+  try {
+    var V = W.CTV9_1084;
+    if (V && typeof V.segs === 'function') {
+      var b = V.segs(w);
+      if (b && b.length >= 9) {
+        var o = [];
+        for (var i = 0; i < 9; i++) { var x = b[i] || {}; o.push({ k: NINE[i], body: S(x.body || x.b || x.t || ''), icon: ICON[i] }); }
+        return o;
+      }
+    }
+  } catch (e) { }
+  return localSegs(w);
+}
+function segIdx(w) {
+  try {
+    var c = C9(), s = c && c.state;
+    if (s && typeof s.i === 'number' && (!w || !s.w || S(s.w.id) === S(w.id))) return s.i;
+  } catch (e) { }
+  var box = $('c121Steps');
+  if (box) {
+    for (var i = 0; i < box.children.length; i++) {
+      var cn = box.children[i].className || '';
+      if (/(^|\s)(on|cur|active|sel)(\s|$)/.test(cn)) return i;
+    }
+  }
+  return 0;
+}
+
+/* ---------- 样式 ---------- */
+var CSS =
+'.ctb-enh{background:linear-gradient(180deg,#12233b,#0d1b2c);border-bottom:1px solid rgba(143,208,255,.25);padding:8px 10px;color:#e8f1f8;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;font-size:13px;flex:0 0 auto;max-height:40vh;overflow:auto;z-index:30}' +
+'.ctb-enh[data-kind="ctv9"]{position:sticky;top:0;border:1px solid rgba(143,208,255,.28);border-radius:10px;margin-bottom:12px;box-shadow:0 6px 18px rgba(0,0,0,.3)}' +
+'.ctb-enh .ctv9-pin{position:relative;top:auto;margin:0 0 7px;padding:7px 9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:9px;box-shadow:none}' +
+'.ctb-enh .ctv9-pin .ph{display:flex;align-items:center;gap:6px;font-size:11px;color:#8fd0ff;font-weight:700;margin-bottom:4px}' +
+'.ctb-enh .ctv9-pin .ph .sp{flex:1}' +
+'.ctb-enh .ctv9-pin .ph .tg{background:rgba(143,208,255,.16);border-radius:20px;padding:2px 8px;font-weight:400;color:#bcd8f2}' +
+'.ctb-enh .ctv9-pin .pq{font-size:13.5px;line-height:1.6;color:#f2f7ff;white-space:pre-wrap;word-break:break-word;max-height:96px;overflow:auto}' +
+'.ctb-enh .ctv9-pin .pk{margin-top:5px;padding-top:5px;border-top:1px dashed rgba(255,255,255,.14);font-size:12px;color:#ffd479}' +
+'.ctb-enh .ctv9-pin .pa{margin-top:3px;font-size:12px;color:#a9e6c8;white-space:pre-wrap;word-break:break-word;max-height:64px;overflow:auto}' +
+'.ctb-enh .ctv9-pin .px{margin-top:3px;font-size:12px;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;max-height:48px;overflow:auto}' +
+'.ctb-enh .ctv9-pin.folded .pq,.ctb-enh .ctv9-pin.folded .pk,.ctb-enh .ctv9-pin.folded .pa,.ctb-enh .ctv9-pin.folded .px{display:none}' +
+'.ctb-enh .fold{cursor:pointer;color:#9fb4cd;font-size:11px;border:0;background:none;padding:0 4px}' +
+'.ctb-enh .ctv9-selbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#8fd0ff}' +
+'.ctb-enh .ctv9-selbar select{padding:5px 8px;border-radius:8px;border:1px solid rgba(143,208,255,.35);background:#132742;color:#eaf2ff;font-size:12.5px;max-width:260px}' +
+'.ctb-enh #ctbSelNote{color:#ffd479;font-size:11.5px}' +
+'.ctb-enh .ctv9-viz{margin:7px 0 0;padding:6px 8px;border:1px solid rgba(143,208,255,.22);border-radius:9px;background:rgba(4,12,24,.6)}' +
+'.ctb-enh .ctv9-viz .vt{font-size:11px;color:#8fd0ff;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:4px}' +
+'.ctb-enh .ctv9-viz .vt .sp{flex:1}' +
+'.ctb-enh .ctv9-viz .vt button{background:rgba(255,255,255,.12);border:0;color:#cfe0f2;border-radius:6px;padding:2px 8px;font-size:11px}' +
+'.ctb-enh .ctv9-viz svg{display:block;max-width:100%;height:auto;max-height:130px;margin:0 auto}' +
+'.ctb-enh .ctv9-viz .ce-img{display:block;max-width:100%;max-height:150px;object-fit:contain;margin:0 auto}' +
+'.ctb-enh .ctv9-viz .vn{font-size:10.5px;color:#9fb4cd;margin-top:4px;line-height:1.5}' +
+'.ctb-enh .ctv9-qa2{margin-top:8px;border-top:1px dashed rgba(255,255,255,.14);padding-top:7px}' +
+'.ctb-enh .ctv9-qa2 .qt{font-size:11.5px;color:#8fd0ff;font-weight:700;margin-bottom:5px}' +
+'.ctb-enh .ctv9-qa2 .qi{display:flex;gap:6px;align-items:center}' +
+'.ctb-enh .ctv9-qa2 input{flex:1;min-width:90px;padding:7px 9px;border-radius:8px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#eaf2ff;font-size:12.5px}' +
+'.ctb-enh .ctv9-qa2 button{background:rgba(143,208,255,.2);border:0;color:#eaf2ff;border-radius:8px;padding:7px 11px;font-size:12.5px}' +
+'.ctb-enh .ctv9-qa2 .qo{margin-top:6px;font-size:12.5px;color:#cfe0f2;line-height:1.7;white-space:pre-wrap;max-height:150px;overflow:auto;display:none}' +
+'.ctb-enh .ctv9-qa2 .qo.on{display:block}' +
+'.ce-vnote{margin-top:6px;font-size:11.5px;color:#ffd479;line-height:1.6}' +
+'@keyframes ctbDash{to{stroke-dashoffset:0}}' +
+'@keyframes ctbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}' +
+'@keyframes ctbSpin{to{transform:rotate(360deg)}}';
+
+function css() {
+  if ($('ctb-enh-css')) return;
+  var el = D.createElement('style'); el.id = 'ctb-enh-css'; el.textContent = CSS;
+  (D.head || D.documentElement).appendChild(el);
+}
+
+/* ---------- 舞台定位：CTV9 原版 / C121 板书 / C120 数字人 ---------- */
+function hostOf() {
+  var stg = $('c120Stage');
+  if (stg) {
+    var on = stg.classList.contains('on');
+    if (!on) { try { on = W.getComputedStyle(stg).display !== 'none'; } catch (e) { } }
+    if (on) {
+      var shell = stg.querySelector('.c121-shell');
+      if (shell) return { root: stg, box: shell, kind: 'c121' };
+      var box = stg.querySelector('.c120-box');
+      if (box) return { root: stg, box: box, kind: 'c120' };
+      return { root: stg, box: stg, kind: 'c120' };
+    }
+  }
+  var m = $('ctv9Modal');
+  if (m && m.classList.contains('on')) {
+    var s = $('ctv9Stage') || m;
+    return { root: m, box: s, kind: 'ctv9' };
+  }
+  return null;
+}
+function afterHeader(box) {
+  for (var i = 0; i < box.children.length; i++) {
+    var cn = box.children[i].className || '';
+    if (/(^|\s)c121-hd(\s|$)/.test(cn) || /(^|\s)c120-hd(\s|$)/.test(cn)) return box.children[i].nextSibling;
+  }
+  return box.firstChild;
+}
+
+/* ---------- 面板骨架 ---------- */
+var SEL_OPTS = [
+  ['src:local', '直接讲（默认·九项逐段朗读＋配图动图）'],
+  ['src:deep', 'AI 深度讲（深·广融合，联网生成）'],
+  ['view:c124', '从零基础讲（零起点慢速拆解）'],
+  ['view:c121', '板书逐步讲解（讲到哪写到哪）'],
+  ['view:c120', '数字人动画课堂'],
+  ['view:old', '原版九项播放器（朗读+投屏+追问+导出）'],
+  ['src:gk9', '高考要点九项（九项一个不少）'],
+  ['src:video', '真人网课（B站名师）'],
+  ['tool:cast', '投屏到电视']
+];
+var folded = false, vizModeV = 'auto', selVal = 'src:local';
+
+function skeleton() {
+  var sel = '';
+  for (var i = 0; i < SEL_OPTS.length; i++) {
+    sel += '<option value="' + SEL_OPTS[i][0] + '"' + (SEL_OPTS[i][0] === selVal ? ' selected' : '') + '>' + E(SEL_OPTS[i][1]) + '</option>';
+  }
+  return '<div class="ctv9-pin ce-pin" id="ctbPin">'
+    + '<div class="ph"><span>📌 原题 · 原知识点（讲解全程置顶）</span><span class="sp"></span><span class="tg" id="ctbIdx">第 1 项</span>'
+    + '<button class="fold" type="button" onclick="CTB_PLAYER_ENHANCE.fold()">收起</button></div>'
+    + '<div class="pq" id="ctbStem"></div>'
+    + '<div class="pk" id="ctbKp"></div>'
+    + '<div class="pa" id="ctbAns"></div>'
+    + '<div class="px" id="ctbMine"></div>'
+    + '</div>'
+    + '<div class="ctv9-selbar"><label>讲解方式 ▾ <select id="ctbSel">' + sel + '</select></label><span id="ctbSelNote"></span></div>'
+    + '<div class="ctv9-viz" id="ctbViz"></div>'
+    + '<div class="ctv9-qa2" id="ctbQA2">'
+    + '<div class="qt">💬 追问老师（讲解全程可用，不随切段消失）</div>'
+    + '<div class="qi"><input id="ctbQ2In" placeholder="例如：这一步为什么要这样变形？" onkeydown="if(event.key===\'Enter\')CTB_PLAYER_ENHANCE.ask2()">'
+    + '<button type="button" onclick="CTB_PLAYER_ENHANCE.ask2()">提问</button></div>'
+    + '<div class="qo" id="ctbQ2Out"></div>'
+    + '</div>';
+}
+function bindSel() {
+  var sel = $('ctbSel'); if (!sel || sel.__bound) return;
+  sel.__bound = 1;
+  sel.addEventListener('change', function () { applySel(sel.value); });
+}
+
+function ensure() {
+  css();
+  var h = hostOf(); if (!h) return null;
+  var p = $('ctbEnh');
+  if (!p) { p = D.createElement('div'); p.id = 'ctbEnh'; p.className = 'ctb-enh'; }
+  if (!p.firstChild) {
+    var d = D.createElement('div'); d.innerHTML = skeleton();
+    while (d.firstChild) p.appendChild(d.firstChild);
+  }
+  if (p.parentNode !== h.box || p.getAttribute('data-kind') !== h.kind) {
+    p.setAttribute('data-kind', h.kind);
+    try { h.box.insertBefore(p, afterHeader(h.box)); } catch (e) { try { h.box.appendChild(p); } catch (e2) { } }
+  }
+  bindSel();
+  updatePin(); updateViz();
+  return p;
+}
+
+/* ---------- 置顶卡 ---------- */
+function updatePin() {
+  var w = curW(), segs = segsOf(w), i = segIdx(w);
+  var stem = stemOf(w), kp = kpOf(w), ans = ansOf(w), my = myOf(w);
+  var eStem = $('ctbStem'); if (eStem) eStem.textContent = stem || '（题干为空：请回到错题详情补全题干）';
+  var eKp = $('ctbKp'); if (eKp) eKp.textContent = kp ? ('📌 知识点：' + kp) : '📌 知识点：（未标注）';
+  var eAns = $('ctbAns'); if (eAns) eAns.textContent = ans ? ('✅ 正确答案：' + ans) : '';
+  var eMy = $('ctbMine'); if (eMy) eMy.textContent = my ? ('✍️ 我的作答：' + my) : '';
+  var eIdx = $('ctbIdx'); if (eIdx) eIdx.textContent = '第 ' + (i + 1) + '/' + (segs.length || 9) + ' 项';
+  var pin = $('ctbPin'); if (pin) pin.classList.toggle('folded', !!folded);
+}
+
+/* ---------- 图示 / 动图 ---------- */
+function svgWrap(inner, w, h) {
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" xmlns="http://www.w3.org/2000/svg">'
+    + '<defs><marker id="ctbArw" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">'
+    + '<path d="M0,0 L0,6 L7,3 z" fill="#8fd0ff"/></marker></defs>' + inner + '</svg>';
+}
+function figFor(w, seg) {
+  seg = seg || {};
+  var k = S(seg.k), body = S(seg.body), subj = subjOf(w);
+  var txt = k + ' ' + body;
+  var hasGeo = /三角|角|边|平行|垂直|圆|弧|面积|体积|坐标|向量/.test(txt) && /数学|物理/.test(subj);
+  var hasPhys = /物理/.test(subj) && /力|运动|速度|加速度|电路|电流|电压|动量|能量|波/.test(txt);
+  var hasChem = /化学/.test(subj) && /反应|方程|原子|分子|键|氧化还原|配平/.test(txt);
+  var hasFormula = /公式|定理|推导|等于|因为|所以|sin|cos|tan|√|∫|∑|\^/.test(txt);
+  var type = 'flow';
+  if (hasGeo) type = 'geo';
+  else if (hasPhys) type = 'phys';
+  else if (hasChem) type = 'chem';
+  else if (hasFormula) type = 'formula';
+  return draw(type, k, body, subj);
+}
+function draw(type, k, body, subj) {
+  var A = '#8fd0ff', B = '#ffd479', G = '#a9e6c8';
+  if (type === 'geo') {
+    return svgWrap(
+      '<polygon points="60,150 200,40 340,150" fill="none" stroke="' + A + '" stroke-width="2.5" stroke-dasharray="420" stroke-dashoffset="420" style="animation:ctbDash 1.8s ease forwards"/>'
+      + '<circle cx="60" cy="150" r="4" fill="' + B + '"/><circle cx="200" cy="40" r="4" fill="' + B + '"/><circle cx="340" cy="150" r="4" fill="' + B + '"/>'
+      + '<line x1="60" y1="150" x2="200" y2="150" stroke="' + G + '" stroke-width="1.6" stroke-dasharray="4 4"/>'
+      + '<path d="M60,150 L74,150 L74,136" fill="none" stroke="' + G + '" stroke-width="1.4"/>'
+      + '<circle cx="200" cy="40" r="14" fill="none" stroke="' + B + '" stroke-width="1.4" style="animation:ctbSpin 8s linear infinite;transform-origin:200px 40px"/>'
+      + '<text x="200" y="184" fill="#cfe0f2" font-size="13" text-anchor="middle">几何示意 · 点/线/角随讲解同步</text>', 400, 200);
+  }
+  if (type === 'phys') {
+    return svgWrap(
+      '<rect x="30" y="96" width="90" height="26" rx="5" fill="none" stroke="' + A + '" stroke-width="2"/>'
+      + '<circle cx="52" cy="128" r="9" fill="none" stroke="' + G + '" stroke-width="1.6"/><circle cx="98" cy="128" r="9" fill="none" stroke="' + G + '" stroke-width="1.6"/>'
+      + '<path d="M140,109 L250,109" stroke="' + B + '" stroke-width="2.5" marker-end="url(#ctbArw)"/>'
+      + '<circle cx="176" cy="109" r="7" fill="' + B + '" style="animation:ctbFloat 2.2s ease-in-out infinite"/>'
+      + '<text x="176" y="86" fill="#ffd479" font-size="12" text-anchor="middle">v / F</text>'
+      + '<text x="300" y="114" fill="#cfe0f2" font-size="13">过程量方向示意</text>'
+      + '<text x="200" y="168" fill="#9fb4cd" font-size="12" text-anchor="middle">动图：物体运动 / 受力随讲解推进</text>', 400, 190);
+  }
+  if (type === 'chem') {
+    return svgWrap(
+      '<circle cx="90" cy="90" r="20" fill="none" stroke="' + A + '" stroke-width="2"/><text x="90" y="96" fill="' + A + '" font-size="14" text-anchor="middle">A</text>'
+      + '<circle cx="200" cy="90" r="20" fill="none" stroke="' + B + '" stroke-width="2"/><text x="200" y="96" fill="' + B + '" font-size="14" text-anchor="middle">B</text>'
+      + '<circle cx="310" cy="90" r="20" fill="none" stroke="' + G + '" stroke-width="2"/><text x="310" y="96" fill="' + G + '" font-size="14" text-anchor="middle">C</text>'
+      + '<path d="M112,90 L176,90" stroke="#8fd0ff" stroke-width="2" marker-end="url(#ctbArw)"/><path d="M224,90 L288,90" stroke="#8fd0ff" stroke-width="2" marker-end="url(#ctbArw)"/>'
+      + '<circle cx="144" cy="90" r="4" fill="' + B + '" style="animation:ctbFloat 1.6s ease-in-out infinite"/>'
+      + '<text x="200" y="152" fill="#cfe0f2" font-size="13" text-anchor="middle">反应路径 · 配平 / 断键成键动画</text>', 400, 175);
+  }
+  if (type === 'formula') {
+    var f = (S(body).replace(/\s+/g, ' ').slice(0, 46)) || k;
+    return svgWrap(
+      '<rect x="30" y="40" width="340" height="72" rx="10" fill="rgba(143,208,255,.08)" stroke="' + A + '" stroke-width="1.4"/>'
+      + '<text x="200" y="84" fill="#f2f7ff" font-size="16" text-anchor="middle">' + E(f) + '</text>'
+      + '<path d="M70,146 L330,146" stroke="' + B + '" stroke-width="2.4" marker-end="url(#ctbArw)" stroke-dasharray="280" stroke-dashoffset="280" style="animation:ctbDash 2s ease forwards"/>'
+      + '<circle cx="70" cy="146" r="5" fill="' + A + '"/><circle cx="330" cy="146" r="5" fill="' + G + '"/>'
+      + '<text x="200" y="176" fill="#9fb4cd" font-size="12" text-anchor="middle">公式 → 代入 → 结论（逐步显现）</text>', 400, 195);
+  }
+  var steps = (S(body).match(/[。；;]/g) || []).length + 2;
+  if (steps > 5) steps = 5; if (steps < 3) steps = 3;
+  var out = '', xs = [50, 145, 240, 335, 200], ys = [70, 70, 70, 70, 150];
+  for (var i = 0; i < steps; i++) {
+    var cc = i === 0 ? A : (i === steps - 1 ? G : B);
+    out += '<circle cx="' + xs[i] + '" cy="' + ys[i] + '" r="19" fill="rgba(255,255,255,.06)" stroke="' + cc + '" stroke-width="2" style="animation:ctbFloat ' + (1.6 + i * 0.25) + 's ease-in-out infinite"/>';
+    out += '<text x="' + xs[i] + '" y="' + (ys[i] + 5) + '" fill="' + cc + '" font-size="12" text-anchor="middle">' + (i + 1) + '</text>';
+    if (i > 0 && i < 4) out += '<path d="M' + (xs[i - 1] + 21) + ',' + ys[i - 1] + ' L' + (xs[i] - 21) + ',' + ys[i] + '" stroke="' + A + '" stroke-width="1.6" marker-end="url(#ctbArw)"/>';
+  }
+  out += '<text x="200" y="196" fill="#9fb4cd" font-size="12" text-anchor="middle">解题步骤流程 · 与朗读进度同步</text>';
+  return svgWrap(out, 400, 215);
+}
+function updateViz() {
+  var v = $('ctbViz'); if (!v) return;
+  var w = curW(), segs = segsOf(w), i = segIdx(w), seg = segs[i] || {};
+  var key = S(w.id) + '|' + i + '|' + S(seg.k) + '|' + S(seg.body).length + '|' + vizModeV;
+  if (v.getAttribute('data-key') === key) return;
+  v.setAttribute('data-key', key);
+  var img = imgOf(w);
+  var html = '<div class="vt"><span>🖼 图示 · ' + E(S(seg.k) || '本题') + '</span><span class="sp"></span>'
+    + '<button type="button" onclick="CTB_PLAYER_ENHANCE.vizMode()">模式：' + (vizModeV === 'auto' ? '自动' : '动画') + '</button></div>';
+  if (img && vizModeV === 'auto') html += '<img class="ce-img" src="' + E(img) + '" alt="原题图">';
+  else html += figFor(w, seg);
+  html += '<div class="vn">' + (img ? '本题有原图：自动模式优先显示原图，无原图时按题型生成示意图。' : '按题型自动生成示意图，几何/物理/化学含动画，随讲解段切换。') + '</div>';
+  v.innerHTML = html;
+}
+
+/* ---------- 问答（AI → 播放器 ask → 离线检索 三级兜底） ---------- */
+function ask2() {
+  var inp = $('ctbQ2In'), out = $('ctbQ2Out');
+  var q = S(inp && inp.value).trim();
+  if (!q) { toast('请先输入问题'); return; }
+  if (out) { out.className = 'qo on'; out.textContent = '思考中…'; }
+  var w = curW(), segs = segsOf(w), seg = segs[segIdx(w)] || {};
+  var ctx = '科目：' + subjOf(w) + '\n知识点：' + kpOf(w) + '\n题面：' + stemOf(w)
+    + '\n我的作答：' + myOf(w) + '\n正确答案：' + ansOf(w)
+    + '\n当前讲到（' + S(seg.k) + '）：' + S(seg.body).slice(0, 400);
+  var shown = false;
+  function done(t) {
+    if (shown || !S(t).trim()) return;
+    shown = true;
+    if (out) { out.className = 'qo on'; out.textContent = S(t); }
+  }
+  function offline() {
+    var kd = kdOf(w);
+    var pool = [kd.concept, kd.steps, kd.error, kd.model, kd.quick, kd.formula, w && w.analysis, seg.body].filter(Boolean).join('\n');
+    var hits = pool.split('\n').filter(function (ln) {
+      return ln && q.split('').some(function (ch) { return ln.indexOf(ch) >= 0 && /[一-龥A-Za-z]/.test(ch); });
+    }).slice(0, 3);
+    done(hits.length ? ('（离线本地检索）\n' + hits.join('\n')) : '（离线）本地库没有直接命中，可在「⚙️ AI 设置」填 Key 后追问。');
+  }
+  var p = null;
+  try {
+    if (typeof W.aiRecogChat === 'function') {
+      p = W.aiRecogChat([{ role: 'user', content: ctx + '\n\n学生问：' + q + '\n请用 1-3 句话直接回答，尽量引用题中的数和这一步的依据；不确定就说「这点需确认」。' }], { temp: 0.3, maxTokens: 600, mode: 'fast' });
+    }
+  } catch (e) { p = null; }
+  if (p && typeof p.then === 'function') {
+    p.then(function (t) { if (S(t).trim()) done(t); else offline(); }).catch(function () { offline(); });
+    return;
+  }
+  var c = C9();
+  if (c && typeof c.ask === 'function') {
+    try {
+      var oldIn = $('ctv9Q'), oldOut = $('ctv9QaOut'), snap = oldIn ? oldIn.value : null;
+      if (oldIn) oldIn.value = q;
+      var r = c.ask();
+      if (oldIn && snap != null) oldIn.value = snap;
+      if (r && typeof r.then === 'function') {
+        r.then(function () { done(oldOut ? oldOut.textContent : ''); if (!shown) offline(); }).catch(function () { offline(); });
+        return;
+      }
+    } catch (e) { }
+  }
+  offline();
+}
+
+/* ---------- 讲解方式切换 ---------- */
+function note(t) { var n = $('ctbSelNote'); if (n) n.textContent = t || ''; }
+function applyView(kind) {
+  var w = curW() || {}, c = C9();
+  var wid = (w && w.id != null) ? String(w.id) : '';
+  try { if (c && typeof c.close === 'function') c.close(); } catch (e) { }
+  if (kind === 'old') {
+    if (c && typeof c.open === 'function') { try { c.open(wid || w); } catch (e2) { } }
+    note('已回到原版播放器（九项逐段朗读）');
+    return;
+  }
+  if (kind === 'c120') {
+    if (W.C120 && typeof W.C120.openPanel === 'function' && typeof W.C120.openStage === 'function') {
+      W.C120.openPanel(w); W.C120.openStage(); note('数字人课堂已打开'); return;
+    }
+    note('数字人课堂未就绪');
+    return;
+  }
+  if (kind === 'c121') {
+    if (W.C121 && typeof W.C121.openStage === 'function') {
+      W.C121.openStage(w); note('板书逐步讲解已打开'); return;
+    }
+    note('板书讲解未就绪');
+    return;
+  }
+  if (kind === 'c124') {
+    if (W.C124 && typeof W.C124.open === 'function') {
+      if (wid) { W.C124.open('video', wid); var fw = findW(wid); if (fw) CURW = fw; note('零基础直讲已打开'); }
+      else note('无法打开：当前没有可定位的错题');
+      return;
+    }
+    note('零基础直讲未就绪');
+    return;
+  }
+  note('该呈现模块未就绪：' + kind);
+}
+function applySel(v) {
+  var c = C9();
+  selVal = v;
+  try {
+    if (v === 'src:deep') {
+      if (c && typeof c.useDeep === 'function') { c.useDeep(); note('已切到 AI 深度讲'); }
+      else note('AI 深度版未就绪（先在 AI 设置填 Key）');
+    } else if (v === 'src:local') {
+      if (c && typeof c.useLocal === 'function') { c.useLocal(); note('已切到本地九项精讲（离线可用）'); }
+      else note('已按本地九项精讲显示');
+    } else if (v === 'src:gk9') {
+      var g = W.__CTB_GK9CTV9_API;
+      if (g && typeof g.open === 'function') { g.open(); note('已切到高考要点九项'); }
+      else note('高考要点模块未就绪');
+    } else if (v === 'src:video') {
+      if (c && typeof c.videos === 'function') { c.videos(); note('已打开真人网课'); }
+      else note('真人网课未就绪');
+    } else if (v === 'tool:cast') {
+      if (c && typeof c.cast === 'function') { c.cast(); note('已发起投屏'); }
+      else note('投屏未就绪：可用「⛶ 全屏」+ 系统无线投屏');
+    } else if (v.indexOf('view:') === 0) {
+      applyView(v.slice(5));
+    }
+  } catch (e) { note('切换失败：' + S(e && e.message || e)); }
+  setTimeout(function () { ensure(); }, 400);
+}
+
+/* ---------- 真人视频：未收录时明确提示 + B 站兜底 ---------- */
+function wrapVideos() {
+  var c = C9(); if (!c || c.__vidWrapped2) return;
+  var ov = c.videos;
+  if (typeof ov !== 'function') return;
+  c.videos = function () {
+    var r = ov.apply(c, arguments);
+    setTimeout(function () {
+      try {
+        var box = $('ctv9VidBox');
+        if (!box) return;
+        if (box.querySelector('.ce-vnote')) return;
+        var txt = box.innerHTML || box.textContent || '';
+        if (!/还没收录真人视频|暂未收录|暂无/.test(txt)) return;
+        var d = D.createElement('div');
+        d.className = 'ce-vnote';
+        d.innerHTML = '本知识点的真人网课暂未收录（与本地九项精讲是两套内容，不是同一套）。'
+          + '<br><button type="button" style="margin-top:5px;background:rgba(143,208,255,.2);border:0;color:#eaf2ff;border-radius:6px;padding:5px 10px;" onclick="CTB_PLAYER_ENHANCE.bili()">↗ 去 B 站搜本题知识点</button>';
+        box.appendChild(d);
+      } catch (e) { }
+    }, 90);
+    return r;
+  };
+  c.__vidWrapped2 = 1;
+}
+
+/* ---------- 挂钩：所有真实入口都记录当前错题并触发重挂 ---------- */
+function hookOne(obj, fnName, argMode) {
+  if (!obj || typeof obj[fnName] !== 'function' || obj['__enh2_' + fnName]) return;
+  var f0 = obj[fnName];
+  obj[fnName] = function (a) {
+    try {
+      if (a && typeof a === 'object') { pickW(a); W.__CTB_ENH_W__ = a; }
+      else if (a != null && (typeof a === 'string' || typeof a === 'number')) {
+        var fw = findW(a); if (fw) { CURW = fw; W.__CTB_ENH_W__ = fw; }
+      }
+    } catch (e) { }
+    var r = f0.apply(obj, arguments);
+    setTimeout(ensure, 30); setTimeout(ensure, 300);
+    return r;
+  };
+  obj['__enh2_' + fnName] = 1;
+}
+function hook() {
+  var c = C9();
+  if (c) { hookOne(c, 'open', 'any'); hookOne(c, 'videos', 'none'); }
+  if (W.C120) { hookOne(W.C120, 'openStage', 'obj'); hookOne(W.C120, 'openPanel', 'obj'); }
+  if (W.C121) { hookOne(W.C121, 'openStage', 'obj'); }
+  if (W.C124) { hookOne(W.C124, 'open', 'any'); }
+  wrapVideos();
+}
+
+/* ---------- 交互 ---------- */
+function pinFold() {
+  folded = !folded;
+  var p = $('ctbPin'); if (p) p.classList.toggle('folded', folded);
+}
+function vizMode() {
+  vizModeV = (vizModeV === 'auto') ? 'animate' : 'auto';
+  var v = $('ctbViz'); if (v) v.removeAttribute('data-key');
+  updateViz();
+}
+function refresh() {
+  var v = $('ctbViz'); if (v) v.removeAttribute('data-key');
+  if (!ensure()) { updatePin(); updateViz(); }
+}
+
+function bili() {
+  var w = curW(), kp = kpOf(w) || subjOf(w);
+  var kw = (kp ? kp + ' ' : '') + '高考 讲解';
+  try { W.open('https://search.bilibili.com/all?keyword=' + encodeURIComponent(kw), '_blank', 'noopener'); }
+  catch (e) { toast('打开浏览器失败，请手动搜索：' + kw); }
+}
+function boot() {
+  hook();
+  setTimeout(hook, 200); setTimeout(hook, 900); setTimeout(hook, 2400);
+  try { setInterval(function () { ensure(); }, 400); } catch (e) { }
+}
+
+W.CTB_PLAYER_ENHANCE = {
+  fold: pinFold, vizMode: vizMode, ask2: ask2, applySel: applySel, selOptions: SEL_OPTS,
+  refresh: refresh, figFor: figFor, bili: bili, tag: K,
+  state: function () { return { folded: folded, vizMode: vizModeV, sel: selVal, kind: (hostOf() || {}).kind || '' }; }
+};
+try {
+  var c0 = C9();
+  if (c0 && !c0.enhance) c0.enhance = { fold: pinFold, vizMode: vizMode, ask2: ask2, applySel: applySel, refresh: refresh };
+} catch (e) { }
+boot();
+})(window, document);
+/* ==== CTB_PLAYER_ENHANCE_END ==== */
+</script>
+
 </html>
