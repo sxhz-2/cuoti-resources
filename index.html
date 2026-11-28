@@ -154777,7 +154777,7 @@ boot();
   'use strict';
   var W = window, D = document;
   if (W.__CTB_UNI_BOOT__) return; W.__CTB_UNI_BOOT__ = true;
-  var BUILD = '10.246-quiet-p3';
+  var BUILD = '10.247-white-p4';
 
   function S(v) { return v == null ? '' : String(v); }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -154973,7 +154973,8 @@ boot();
   })();
 
   /* ================= 2) 状态机与稿源适配 ================= */
-  var ST = { open: false, ctx: null, segs: [], i: 0, src: '', ttsToken: 0, playing: false, minimized: false, sources: [] };
+  var ST = { open: false, ctx: null, segs: [], i: 0, src: '', ttsToken: 0, playing: false, minimized: false, sources: [], rate: 1, chain: false };
+  try { var _r0 = Number(localStorage.getItem('ctb_uni_rate')); if (_r0 >= 0.5 && _r0 <= 2) ST.rate = _r0; } catch (e) {}
 
   function resolveCtx(a) {
     try {
@@ -155129,7 +155130,7 @@ boot();
     stopTTS();
     var segs = buildSegs(ST.ctx, id);
     if (!segs.length) { toast('该稿源取不到内容'); return false; }
-    ST.segs = segs.concat(keep);
+    ST.segs = polishSegs(segs.concat(keep), ST.ctx);
     ST.i = 0;
     render();
     var a = adapterById(ST.src);
@@ -155157,27 +155158,40 @@ boot();
     '.cu-cap{margin-top:8px;font-size:12px;color:#8fa8bf;letter-spacing:.4px;}',
     '.cu-spk{position:absolute;right:20px;top:16px;background:rgba(15,32,48,.85);border:1px solid rgba(127,211,255,.28);',
     'color:#cfe6f8;border-radius:20px;padding:6px 13px;font-size:12.5px;cursor:pointer;}',
-    /* 白框（讲解正文）：手指可直接上下拖动定位看全文。
-       max-height 抬到 46vh；touch-action:pan-y 让手动接管 scrollTop 时不会被浏览器滚动链抢走；
-       overscroll-behavior:contain 防止拖到底把整页带着弹。 */
-    '.cu-sub{flex:0 0 auto;position:relative;margin:0 14px 8px;background:rgba(12,26,40,.92);border:1px solid rgba(120,170,215,.20);',
-    'border-radius:12px;padding:12px 15px;max-height:46vh;overflow-y:auto;overflow-x:hidden;',
+    /* 白柜（讲解正文）10.247：改成白底深字的「讲解柜」，与老九项文字面板观感一致，
+       不再用深色卡片。手指可直接上下拖动定位看全文。 */
+    '.cu-sub{flex:0 0 auto;position:relative;margin:0 14px 8px;background:#fff;',
+    'border:1px solid rgba(0,0,0,.10);border-left:4px solid #22a06b;box-shadow:0 6px 22px rgba(0,0,0,.30);',
+    'border-radius:12px;padding:13px 16px;max-height:46vh;overflow-y:auto;overflow-x:hidden;',
     '-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;}',
     '.cu-sub::-webkit-scrollbar{width:6px;}',
-    '.cu-sub::-webkit-scrollbar-thumb{background:rgba(127,211,255,.30);border-radius:3px;}',
+    '.cu-sub::-webkit-scrollbar-thumb{background:rgba(45,95,138,.28);border-radius:3px;}',
     '.cu-sub::-webkit-scrollbar-track{background:transparent;}',
     '.cu-dragtip{position:absolute;right:10px;top:7px;display:none;font-size:10.5px;line-height:1.5;',
-    'color:#8fa8bf;background:rgba(8,18,28,.78);border:1px solid rgba(120,170,215,.22);',
+    'color:#5b6b7d;background:#eef3f8;border:1px solid #dbe4ee;',
     'border-radius:10px;padding:1px 7px;pointer-events:none;}',
-    '.cu-sub .k{font-size:11.5px;color:#7fd3ff;letter-spacing:1px;margin-bottom:5px;}',
-    '.cu-sub .t{font-size:14.5px;font-weight:600;color:#ffd479;margin-bottom:6px;}',
-    '.cu-sub .b{font-size:13.5px;line-height:1.85;color:#d6e6f4;white-space:pre-wrap;}',
-    '.cu-foot{flex:0 0 auto;padding:8px 14px 12px;border-top:1px solid rgba(120,170,215,.14);}',
+    '.cu-sub .k{font-size:11px;color:#8a97a6;letter-spacing:1px;margin-bottom:5px;}',
+    '.cu-sub .t{font-size:15px;font-weight:700;color:#12324a;margin-bottom:7px;line-height:1.5;}',
+    '.cu-sub .b{font-size:14px;line-height:1.9;color:#22303f;white-space:pre-wrap;}',
+    '.cu-foot{flex:0 0 auto;position:relative;padding:8px 14px 12px;border-top:1px solid rgba(120,170,215,.14);}',
     '.cu-ask{display:flex;align-items:center;gap:8px;}',
     '.cu-ask input{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(120,170,215,.26);border-radius:10px;',
     'padding:9px 12px;color:#e8f1fa;font-size:13px;outline:none;}',
     '.cu-ask input::placeholder{color:#7289a0;}',
     '.cu-meta{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11.5px;color:#7d95ac;flex-wrap:wrap;}',
+    /* 播放设置面板（语速 / 连播 / 续播）：悬浮在底部球框上方，样式与顶栏一致 */
+    '.cu-set{position:absolute;left:14px;right:14px;bottom:calc(100% + 6px);z-index:9;display:none;',
+    'background:rgba(12,24,36,.98);border:1px solid rgba(120,170,215,.28);border-radius:12px;',
+    'padding:8px 13px;box-shadow:0 10px 30px rgba(0,0,0,.55);}',
+    '.cu-set[data-on="1"]{display:block;}',
+    '.cu-set .row{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12.5px;color:#cfe0ef;}',
+    '.cu-set .row>span:first-child{flex:1;color:#a9bfd4;}',
+    '.cu-set .seg{padding:3px 10px;border-radius:9px;border:1px solid rgba(127,211,255,.28);',
+    'color:#b9d4ea;cursor:pointer;font-size:12px;}',
+    '.cu-set .seg[data-cur="1"]{background:rgba(127,211,255,.24);color:#fff;border-color:rgba(127,211,255,.60);}',
+    '.cu-set .sw{padding:3px 13px;border-radius:9px;border:1px solid rgba(120,170,215,.30);',
+    'color:#8fa8bf;cursor:pointer;font-size:12px;min-width:44px;text-align:center;}',
+    '.cu-set .sw[data-on="1"]{color:#0b1a26;background:#8ce99a;border-color:#8ce99a;font-weight:600;}',
     '.cu-drawer{position:absolute;right:14px;top:56px;bottom:14px;width:270px;background:rgba(10,22,34,.97);',
     'border:1px solid rgba(120,170,215,.24);border-radius:12px;padding:10px;overflow:auto;display:none;z-index:3;}',
     '.cu-drawer[data-on="1"]{display:block;}',
@@ -155219,7 +155233,6 @@ boot();
       + '</div>'
       + '<div class="cu-stage" id="cuStage">'
       + '<div id="cuVizSlot" style="width:100%;height:100%;display:flex"><!--viz--></div>'
-      + '<button class="cu-spk" id="cuSpk">🔊 朗读</button>'
       + '<div class="cu-drawer" id="cuDrawer"><!--toc--></div>'
       + '</div>'
       + '<div class="cu-sub" id="cuSub">'
@@ -155238,21 +155251,165 @@ boot();
       + '<span id="cuProg">0 / 0</span>'
       + '<button class="cu-btn" id="cuPrev" style="padding:4px 9px">◀</button>'
       + '<button class="cu-btn" id="cuNext" style="padding:4px 9px">▶</button>'
-      + '<span id="cuPlay" style="cursor:pointer">🔊 朗读</span>'
-      + '<span id="cuChan">通道：自动</span>'
-      + '<span id="cuAuto" style="cursor:pointer;color:#8ce99a">续播关</span>'
+      + '<button class="cu-btn" id="cuPlay" style="padding:4px 10px">🔊 朗读</button>'
+      + '<button class="cu-btn" id="cuSet" style="padding:4px 9px">⚙ 设置</button>'
+      + '<span id="cuChan" style="display:none">通道：自动</span>'
       + '<span id="cuMini" style="cursor:pointer;margin-left:auto">收起</span>'
       + '<span id="cuBadge" style="opacity:.55">P0 · ' + BUILD + '</span>'
+      + '</div>'
+      + '<div class="cu-set" id="cuSetPanel" data-on="0">'
+      + '<div class="row"><span>朗读语速</span>'
+      + '<span class="seg" data-rate="0.8">0.8×</span>'
+      + '<span class="seg" data-rate="1" data-cur="1">1.0×</span>'
+      + '<span class="seg" data-rate="1.2">1.2×</span>'
+      + '<span class="seg" data-rate="1.5">1.5×</span></div>'
+      + '<div class="row"><span>讲完一段自动念下一段</span><span class="sw" id="setChain" data-on="0">关</span></div>'
+      + '<div class="row"><span>答疑答完自动念</span><span class="sw" id="setAuto" data-on="0">关</span></div>'
       + '</div>'
       + '</div>';
     (D.documentElement || D.body).appendChild(m);
     bind(m);
   }
 
+  /* ================= 3.5) 讲解稿清洗（10.247）=================
+     用户要求：讲题直接开讲，只针对这道错题/这个知识点，拒绝与解题无关的套话。
+     稿源由老引擎拼装，混进了两类噪音，这里在「进白柜之前」统一洗掉（不改老引擎）：
+       ① 平台操作文案：📍在原卷定位 / 📘九步解析 / 🎬视频讲解 / 【我写的】（空着没写）/
+          【本资料里的位置】← 返回试卷列表 / 📊批改结果 / 得分 16/24 / 📌原卷批改痕迹…
+       ② 模板套话块：【术语口径】【白话一句】【对着这道题问自己三句】【每条公式过三件事】
+          【怎么挑】【写在哪】【逐个对】【判断方法】【只认一条】【怎么认】【记住它】
+          【迁移法】【判定标准】【用前必看】【动作清单】【归到哪一类】【下一步只做一件事】
+          【依题依点】【九项要求】【深讲动作】【题干照卷面抄】【记】…
+     含【】的段落按标题切块删，能处理「一行里串好几个标题」的写法。 */
+  var UI_JUNK = [
+    /📍\s*在原卷定位/g, /📘\s*九步解析/g, /🎬\s*视频讲解/g, /📌\s*原卷批改痕迹/g,
+    /📊\s*批改结果/g, /←\s*返回试卷列表/g,
+    /【本资料里的位置】[^\n]*/g, /【我写的】[^\n]*/g,
+    /（空着没写）/g, /（未标注）/g, /（未标）/g, /（知识点库未收录[^）]*）/g,
+    /\b\d{4}\/\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}:\d{2}\b/g,
+    /√全对|半勾部分|逐问判分|判分共\s*\d+\s*题/g, /得分\s*\d+\s*\/\s*\d+/g
+  ];
+  var DROP_PREFIX = [
+    '术语口径', '白话一句', '对着这道题问自己三句', '先看这一句', '每条公式过三件事',
+    '怎么挑', '写在哪', '逐个对', '判断方法', '只认一条', '怎么认', '记住它',
+    '迁移法', '判定标准', '用前必看', '动作清单', '归到哪一类', '下一步只做一件事',
+    '依题依点', '九项要求', '深讲动作', '题干照卷面抄', '在高考里怎么出现', '记',
+    '同考点收录', '出题人为什么这么出', '出题人在这道题上做的事', '·按年份排', '按年份排'
+  ];
+  /* 「依题依点」注入的同源例题块：标题是这些，内容却常常是**另一道题**。
+     判定为外来题的整块删掉，连它后面的【知识点】【详解】【答案】一起删。 */
+  var FOREIGN_HEADS = ['本题', '例题', '真题', '配套考题', '配套题', '变式题', '练习'];
+  var SUB_HEADS = ['知识点', '详解', '答案', '解析', '点评', '分析', '点睛'];
+  function looksLikeOther(txt, ref) {
+    var a = S(txt).replace(/\s/g, ''), b = S(ref).replace(/\s/g, '');
+    if (!a || !b) return false;
+    if (a.indexOf(b.slice(0, 24)) >= 0) return false;
+    if (b.indexOf(a.slice(0, 24)) >= 0) return false;
+    var hit = 0, n = 0, i;
+    for (i = 0; i + 8 <= b.length && i < 64; i += 8) {
+      n++;
+      if (a.indexOf(b.substr(i, 8)) >= 0) hit++;
+    }
+    return n ? (hit / n) < 0.34 : true;
+  }
+  var TAG_MAP = { '这道题的完整信息': '本题', '题干与出处': '本题', '题干': '本题' };
+
+  function cleanBody(body, ref) {
+    var s = S(body), i;
+    for (i = 0; i < UI_JUNK.length; i++) { try { s = s.replace(UI_JUNK[i], ''); } catch (e) {} }
+    /* 按【标题】切块；黑名单标题整块（含其后子句）丢弃 */
+    var parts = [], re = /【([^】]{1,24})】/g, last = 0, m, cur = { head: '', txt: '' };
+    while ((m = re.exec(s))) {
+      cur.txt += s.slice(last, m.index);
+      parts.push(cur);
+      cur = { head: m[1], txt: '' };
+      last = m.index + m[0].length;
+    }
+    cur.txt += s.slice(last);
+    parts.push(cur);
+    var keep = [], dropped = 0, seen = {}, skipSub = false;
+    for (i = 0; i < parts.length; i++) {
+      var h = S(parts[i].head), txt = S(parts[i].txt), hit = false;
+      if (h) {
+        for (var k = 0; k < DROP_PREFIX.length; k++) {
+          if (h.indexOf(DROP_PREFIX[k]) === 0) { hit = true; break; }
+        }
+      }
+      if (hit) { dropped++; continue; }
+      /* 外来题：不是本题的题目块，连同它的解析一起删（这是「讲解跑题」的根源） */
+      if (h && FOREIGN_HEADS.indexOf(h) >= 0) {
+        if (looksLikeOther(txt, ref)) { dropped++; skipSub = true; continue; }
+        skipSub = false;
+      } else if (h && SUB_HEADS.indexOf(h) >= 0) {
+        if (skipSub) { dropped++; continue; }
+      } else if (h) {
+        skipSub = false;
+      }
+      /* 同一个【标题】+ 同一段正文在稿里被拼了多遍（老引擎第1项常把题干写 2–3 次）：
+         只留第一份，避免白柜里读三遍同一句。 */
+      if (h) {
+        var key = h + '|' + txt.replace(/\s+/g, ' ').trim().slice(0, 400);
+        if (seen[key]) continue;
+        seen[key] = 1;
+        /* 换了标题但正文一字不差（【正确答案】与【标准答案】、【课本定义】与【这个概念的核心】）
+           同样只留一份，否则白柜里同一句话读两遍 */
+        var tkey = txt.replace(/\s+/g, '').slice(0, 200);
+        if (tkey.length >= 8) {
+          if (seen['#' + tkey]) continue;
+          seen['#' + tkey] = 1;
+        }
+      }
+      keep.push((h ? '【' + h + '】' : '') + txt);
+    }
+    var out = keep.join('');
+    /* 只剩标题没正文的（如「【本题解析】」后面空），把标题也删掉；连锁多轮 */
+    for (i = 0; i < 3; i++) out = out.replace(/【[^】]{1,24}】(?=\s*(?:【|$))/g, '');
+    out = out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^[\s、，,。.]+|[\s、，,]+$/g, '');
+    /* 老引擎偶尔把同一块（最常见是题干）拼两遍：相邻完全相同的块只留一份 */
+    var chunks = out.split(/\n{2,}/), uniq = [];
+    for (i = 0; i < chunks.length; i++) {
+      var ck = chunks[i].replace(/\s+/g, '');
+      if (!ck) continue;
+      if (uniq.length && uniq[uniq.length - 1].k === ck) continue;
+      uniq.push({ k: ck, t: chunks[i].trim() });
+    }
+    out = uniq.map(function (x) { return x.t; }).join('\n\n');
+    if (dropped && !out.replace(/\s/g, '')) return '';
+    return out;
+  }
+  function cleanTag(tag) {
+    var t = S(tag).replace(/^[^\u4e00-\u9fa5A-Za-z0-9（(]+/, '').replace(/（优先采用）/g, '').trim();
+    if (TAG_MAP[t]) return TAG_MAP[t];
+    return t;
+  }
+  /* 清洗整份稿子：空段丢掉，洗完不足 2 段就退回原稿（宁可不洗，也不给空舞台） */
+  function polishSegs(segs, ctx) {
+    if (!segs || !segs.length) return segs || [];
+    var ref = S(ctx && (ctx.question || ctx.stem));
+    var out = [], i;
+    for (i = 0; i < segs.length; i++) {
+      var sg = segs[i] || {};
+      var body = cleanBody(sg.body, ref);
+      if (!body || body.replace(/\s/g, '').length < 4) continue;
+      out.push({ tag: cleanTag(sg.tag) || S(sg.tag), body: body });
+    }
+    if (out.length < 2) return segs;
+    return out;
+  }
+
   /* ================= 4) 渲染 ================= */
   function render() {
     var seg = ST.segs[ST.i] || { tag: '—', body: '暂无可讲内容' };
+    /* 老引擎会在 open 之后异步往段里再塞模板句（依题依点/术语口径…），
+       所以每次渲染都过一遍清洗，幂等、便宜，保证白柜里始终没有套话。 */
+    try {
+      var _ref = S(ST.ctx && (ST.ctx.question || ST.ctx.stem));
+      var _b = cleanBody(seg.body, _ref);
+      if (_b && _b !== seg.body) seg.body = _b;
+      seg.tag = cleanTag(seg.tag) || seg.tag;
+    } catch (e) {}
     var t = $('cuTag'), b = $('cuBody'), p = $('cuProg'), slot = $('cuVizSlot'), ti = $('cuTitle');
+    var kk = $('cuKicker'); if (kk) kk.textContent = '本题讲解 · 第 ' + (ST.i + 1) + ' / ' + ST.segs.length + ' 项';
     if (t) t.textContent = seg.tag;
     if (b) b.textContent = seg.body;
     if (p) p.textContent = (ST.i + 1) + ' / ' + ST.segs.length;
@@ -155327,12 +155484,27 @@ boot();
     stopTTS();
     var tok = ST.ttsToken;
     var seg = ST.segs[ST.i] || {};
+    /* 念之前也洗一遍：避免把异步追加进来的套话念出来 */
+    try {
+      var _rb = cleanBody(seg.body, S(ST.ctx && (ST.ctx.question || ST.ctx.stem)));
+      if (_rb && _rb !== seg.body) seg.body = _rb;
+    } catch (e) {}
     var txt = S(seg.tag) + '。' + S(seg.body);
     if (!txt.trim()) return;
     try {
       var u = new W.SpeechSynthesisUtterance(txt);
-      u.lang = 'zh-CN'; u.rate = 1.0;
-      u.onend = function () { if (tok === ST.ttsToken) { ST.playing = false; var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读'; } };
+      u.lang = 'zh-CN'; u.rate = ST.rate;
+      u.onend = function () {
+        if (tok !== ST.ttsToken) return;
+        ST.playing = false;
+        var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读';
+        /* 连播：念完自动进下一段。默认关，只有用户在「⚙ 设置」里打开才走。 */
+        if (ST.chain && ST.i < ST.segs.length - 1) {
+          ST.i++;
+          render();
+          setTimeout(function () { if (ST.chain && ST.open) speak(); }, 140);
+        }
+      };
       ST.playing = true;
       var pb2 = $('cuPlay'); if (pb2) pb2.textContent = '⏸ 停止';
       W.speechSynthesis.speak(u);
@@ -155425,8 +155597,21 @@ boot();
   }
   function setAuto(v) {
     QA.auto = !!v;
-    var el = $('cuAuto');
-    if (el) el.textContent = QA.auto ? '续播开' : '续播关';
+    var el = $('setAuto');
+    if (el) { el.setAttribute('data-on', QA.auto ? '1' : '0'); el.textContent = QA.auto ? '开' : '关'; }
+  }
+  function setChain(v) {
+    ST.chain = !!v;
+    var el = $('setChain');
+    if (el) { el.setAttribute('data-on', ST.chain ? '1' : '0'); el.textContent = ST.chain ? '开' : '关'; }
+  }
+  function setRate(v) {
+    ST.rate = Math.max(0.5, Math.min(2, Number(v) || 1));
+    try { localStorage.setItem('ctb_uni_rate', String(ST.rate)); } catch (e) {}
+    var els = D.querySelectorAll('#cuSetPanel .seg');
+    for (var i = 0; i < els.length; i++) {
+      els[i].setAttribute('data-cur', Number(els[i].getAttribute('data-rate')) === ST.rate ? '1' : '0');
+    }
   }
 
   /* ================= 6) 打开 / 关闭 ================= */
@@ -155437,6 +155622,8 @@ boot();
     ST.segs = (opts && opts.segs && opts.segs.length) ? opts.segs : buildSegs(c);
     try { ST.sources = scanSources(c); } catch (e) { ST.sources = []; }
     if (!ST.segs.length) ST.segs = [{ tag: '本题讲解', body: '未取到讲解内容（题目为空或稿源未就绪）。' }];
+    /* 进白柜前统一洗稿：去掉平台操作文案与通用套话，只留这道题本身 */
+    ST.segs = polishSegs(ST.segs, c);
     ST.i = 0; ST.minimized = false;
     var m = $('ctbUniMask');
     if (m) { m.classList.remove('cu-mini'); m.setAttribute('data-on', '1'); }
@@ -155448,6 +155635,8 @@ boot();
        老引擎（C121/CTV9）常在 open 后延迟 200–1500ms 自己开念，这里给 2.4 秒保护期压住；
        用户点「🔊 朗读」会立刻解除保护，不影响主动朗读。 */
     setAuto(QA.auto);
+    setChain(ST.chain);
+    setRate(ST.rate);
     silence(2400);
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
     return true;
@@ -155494,7 +155683,6 @@ boot();
       /* 稿源切换放在抽屉里：同一处既能换源也能跳段 */
       var dr = $('cuDrawer'); if (dr) dr.setAttribute('data-on', '1');
     });
-    on('cuSpk', 'click', function () { if (ST.playing) stopTTS(); else speak(); });
     on('cuPlay', 'click', function () { if (ST.playing) stopTTS(); else speak(); });
     on('cuPrev', 'click', function () { if (ST.i > 0) { ST.i--; stopTTS(); render(); } });
     on('cuNext', 'click', function () { if (ST.i < ST.segs.length - 1) { ST.i++; stopTTS(); render(); } });
@@ -155506,7 +155694,22 @@ boot();
       var ip = $('cuInput'); if (!ip) return;
       var v = ip.value; ip.value = ''; ask(v);
     });
-    on('cuAuto', 'click', function () { setAuto(!QA.auto); toast(QA.auto ? '答完自动接着讲' : '答完不自动续播'); });
+    on('cuSet', 'click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      var pn0 = $('cuSetPanel');
+      if (pn0) pn0.setAttribute('data-on', pn0.getAttribute('data-on') === '1' ? '0' : '1');
+    });
+    /* 播放设置：语速 / 连播 / 续播，点了立即生效；语速写 localStorage 记住 */
+    var pn = $('cuSetPanel');
+    if (pn) {
+      pn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var t = e.target, rate = t && t.getAttribute && t.getAttribute('data-rate');
+        if (rate) { setRate(rate); toast('朗读语速 ' + ST.rate.toFixed(1) + '×'); return; }
+        if (t && t.id === 'setChain') { setChain(!ST.chain); toast(ST.chain ? '念完自动进下一段：开' : '念完自动进下一段：关'); return; }
+        if (t && t.id === 'setAuto') { setAuto(!QA.auto); toast(QA.auto ? '答疑答完自动念：开' : '答疑答完自动念：关'); return; }
+      }, false);
+    }
     on('cuInput', 'keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var ip = $('cuInput'); var v = ip.value; ip.value = ''; ask(v); }
     });
@@ -155533,6 +155736,15 @@ boot();
       var i = parseInt(t.getAttribute('data-i'), 10);
       if (!isNaN(i)) { ST.i = i; stopTTS(); render(); }
     }, false);
+
+    /* 点面板以外任何地方收起设置面板（捕获阶段，先于业务点击） */
+    D.addEventListener('click', function (e) {
+      var pn2 = $('cuSetPanel');
+      if (!pn2 || pn2.getAttribute('data-on') !== '1') return;
+      var t = e.target;
+      if (t && (t.id === 'cuSet' || (t.closest && t.closest('#cuSetPanel')))) return;
+      pn2.setAttribute('data-on', '0');
+    }, true);
 
     /* 影院（ld）与 ctb175 里的「❓ 问答 / 🎤 随时提问」按钮：
        新壳开启时改为聚焦新壳输入框，不再去拉起已被隐去的老条。 */
