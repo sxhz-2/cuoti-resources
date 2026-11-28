@@ -154777,7 +154777,7 @@ boot();
   'use strict';
   var W = window, D = document;
   if (W.__CTB_UNI_BOOT__) return; W.__CTB_UNI_BOOT__ = true;
-  var BUILD = '10.247-white-p4';
+  var BUILD = '10.248-one-flow';
 
   function S(v) { return v == null ? '' : String(v); }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -154973,7 +154973,7 @@ boot();
   })();
 
   /* ================= 2) 状态机与稿源适配 ================= */
-  var ST = { open: false, ctx: null, segs: [], i: 0, src: '', ttsToken: 0, playing: false, minimized: false, sources: [], rate: 1, chain: false };
+  var ST = { open: false, ctx: null, segs: [], i: 0, src: '', ttsToken: 0, playing: false, minimized: false, sources: [], rate: 1, chain: true, stem: '', playIdx: 0, lock: false };
   try { var _r0 = Number(localStorage.getItem('ctb_uni_rate')); if (_r0 >= 0.5 && _r0 <= 2) ST.rate = _r0; } catch (e) {}
 
   function resolveCtx(a) {
@@ -155131,7 +155131,7 @@ boot();
     var segs = buildSegs(ST.ctx, id);
     if (!segs.length) { toast('该稿源取不到内容'); return false; }
     ST.segs = polishSegs(segs.concat(keep), ST.ctx);
-    ST.i = 0;
+    ST.i = 0; ST.playIdx = 0; ST._viz = -1;
     render();
     var a = adapterById(ST.src);
     toast('已切到「' + (a ? a.label : ST.src) + '」共 ' + segs.length + ' 段');
@@ -155152,10 +155152,27 @@ boot();
     'padding:6px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap;}',
     '.cu-btn:active{background:rgba(127,211,255,.22);}',
     '.cu-btn.x{border-color:rgba(255,140,140,.35);color:#ffb3b3;}',
-    '.cu-stage{flex:1 1 auto;position:relative;display:flex;align-items:center;justify-content:center;padding:10px 14px;min-height:0;}',
-    '.cu-viz{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;}',
+    '.cu-stage{flex:1 1 auto;position:relative;display:flex;flex-direction:column;align-items:stretch;',
+    'justify-content:flex-start;padding:8px 12px 4px;min-height:0;gap:6px;}',
+    '.cu-viz{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;}',
     '.cu-viz svg{width:100%;height:auto;max-height:100%;}',
-    '.cu-cap{margin-top:8px;font-size:12px;color:#8fa8bf;letter-spacing:.4px;}',
+    '.cu-cap{margin-top:6px;font-size:12px;color:#8fa8bf;letter-spacing:.4px;}',
+    /* 原题条（10.248）：钉在图形上方常驻，直到本题讲解结束（close）才撤。
+       默认只显示两行，点「展开全文」看完整题面；展开后最高 34vh、可滚。 */
+    '.cu-qbar{flex:0 0 auto;background:rgba(11,26,42,.94);border:1px solid rgba(120,170,215,.22);',
+    'border-left:3px solid #ffd479;border-radius:10px;padding:7px 11px;max-height:78px;overflow:auto;',
+    '-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}',
+    '.cu-qbar[data-open="1"]{max-height:34vh;}',
+    '.cu-qbar .qhd{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#ffd479;letter-spacing:.7px;}',
+    '.cu-qbar .qm{margin-left:auto;color:#8fb6d6;font-size:10.5px;cursor:pointer;border-bottom:1px dotted #4d6d8c;}',
+    '.cu-qbar .qbd{margin-top:3px;font-size:12.5px;line-height:1.7;color:#d6e6f4;white-space:pre-wrap;}',
+    '.cu-qbar[data-open="0"] .qbd{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
+    /* 一镜到底：11 项排在同一个白柜里连续滚动，段间用细虚线分隔 */
+    '.cu-seg{padding:0 0 13px;margin:0 0 13px;border-bottom:1px dashed #dfe7ef;}',
+    '.cu-seg:last-child{border-bottom:0;padding-bottom:2px;margin-bottom:0;}',
+    '.cu-seg .no{display:inline-block;min-width:19px;height:19px;line-height:19px;text-align:center;',
+    'border-radius:5px;background:#e8eef5;color:#5b7086;font-size:11px;margin-right:7px;font-weight:600;}',
+    '.cu-seg[data-cur="1"] .no{background:#22a06b;color:#fff;}',
     '.cu-spk{position:absolute;right:20px;top:16px;background:rgba(15,32,48,.85);border:1px solid rgba(127,211,255,.28);',
     'color:#cfe6f8;border-radius:20px;padding:6px 13px;font-size:12.5px;cursor:pointer;}',
     /* 白柜（讲解正文）10.247：改成白底深字的「讲解柜」，与老九项文字面板观感一致，
@@ -155167,12 +155184,12 @@ boot();
     '.cu-sub::-webkit-scrollbar{width:6px;}',
     '.cu-sub::-webkit-scrollbar-thumb{background:rgba(45,95,138,.28);border-radius:3px;}',
     '.cu-sub::-webkit-scrollbar-track{background:transparent;}',
-    '.cu-dragtip{position:absolute;right:10px;top:7px;display:none;font-size:10.5px;line-height:1.5;',
-    'color:#5b6b7d;background:#eef3f8;border:1px solid #dbe4ee;',
+    '.cu-dragtip{position:sticky;top:0;z-index:2;display:none;margin:0 0 6px auto;width:fit-content;',
+    'font-size:10.5px;line-height:1.5;color:#5b6b7d;background:#eef3f8;border:1px solid #dbe4ee;',
     'border-radius:10px;padding:1px 7px;pointer-events:none;}',
-    '.cu-sub .k{font-size:11px;color:#8a97a6;letter-spacing:1px;margin-bottom:5px;}',
-    '.cu-sub .t{font-size:15px;font-weight:700;color:#12324a;margin-bottom:7px;line-height:1.5;}',
-    '.cu-sub .b{font-size:14px;line-height:1.9;color:#22303f;white-space:pre-wrap;}',
+    '.cu-sub .k{font-size:11px;color:#8a97a6;letter-spacing:1px;margin-bottom:7px;}',
+    '.cu-seg .t{font-size:15px;font-weight:700;color:#12324a;margin-bottom:6px;line-height:1.5;}',
+    '.cu-seg .b{font-size:14px;line-height:1.9;color:#22303f;white-space:pre-wrap;word-break:break-word;}',
     '.cu-foot{flex:0 0 auto;position:relative;padding:8px 14px 12px;border-top:1px solid rgba(120,170,215,.14);}',
     '.cu-ask{display:flex;align-items:center;gap:8px;}',
     '.cu-ask input{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(120,170,215,.26);border-radius:10px;',
@@ -155232,14 +155249,17 @@ boot();
       + '<button class="cu-btn x" id="cuClose">✕</button>'
       + '</div>'
       + '<div class="cu-stage" id="cuStage">'
-      + '<div id="cuVizSlot" style="width:100%;height:100%;display:flex"><!--viz--></div>'
+      + '<div class="cu-qbar" id="cuQ" data-open="0">'
+      + '<div class="qhd"><span>📌 原题 · 常驻</span><span class="qm" id="cuQMore">展开全文</span></div>'
+      + '<div class="qbd" id="cuQbd">—</div>'
+      + '</div>'
+      + '<div id="cuVizSlot" style="width:100%;flex:1 1 auto;display:flex;min-height:0"><!--viz--></div>'
       + '<div class="cu-drawer" id="cuDrawer"><!--toc--></div>'
       + '</div>'
       + '<div class="cu-sub" id="cuSub">'
       + '<div class="cu-dragtip" id="cuDragTip">↕ 上下拖动看全文</div>'
       + '<div class="k" id="cuKicker">本题讲解</div>'
-      + '<div class="t" id="cuTag">—</div>'
-      + '<div class="b" id="cuBody">—</div>'
+      + '<div id="cuList"><!--segs--></div>'
       + '</div>'
       + '<div class="cu-foot">'
       + '<div class="cu-ask">'
@@ -155251,19 +155271,19 @@ boot();
       + '<span id="cuProg">0 / 0</span>'
       + '<button class="cu-btn" id="cuPrev" style="padding:4px 9px">◀</button>'
       + '<button class="cu-btn" id="cuNext" style="padding:4px 9px">▶</button>'
-      + '<button class="cu-btn" id="cuPlay" style="padding:4px 10px">🔊 朗读</button>'
+      + '<button class="cu-btn" id="cuPlay" style="padding:4px 10px">▶ 播放</button>'
       + '<button class="cu-btn" id="cuSet" style="padding:4px 9px">⚙ 设置</button>'
       + '<span id="cuChan" style="display:none">通道：自动</span>'
       + '<span id="cuMini" style="cursor:pointer;margin-left:auto">收起</span>'
       + '<span id="cuBadge" style="opacity:.55">P0 · ' + BUILD + '</span>'
       + '</div>'
       + '<div class="cu-set" id="cuSetPanel" data-on="0">'
-      + '<div class="row"><span>朗读语速</span>'
+      + '<div class="row"><span>播放语速</span>'
       + '<span class="seg" data-rate="0.8">0.8×</span>'
       + '<span class="seg" data-rate="1" data-cur="1">1.0×</span>'
       + '<span class="seg" data-rate="1.2">1.2×</span>'
       + '<span class="seg" data-rate="1.5">1.5×</span></div>'
-      + '<div class="row"><span>讲完一段自动念下一段</span><span class="sw" id="setChain" data-on="0">关</span></div>'
+      + '<div class="row"><span>播完一项自动念下一项</span><span class="sw" id="setChain" data-on="1">开</span></div>'
       + '<div class="row"><span>答疑答完自动念</span><span class="sw" id="setAuto" data-on="0">关</span></div>'
       + '</div>'
       + '</div>';
@@ -155287,7 +155307,14 @@ boot();
     /【本资料里的位置】[^\n]*/g, /【我写的】[^\n]*/g,
     /（空着没写）/g, /（未标注）/g, /（未标）/g, /（知识点库未收录[^）]*）/g,
     /\b\d{4}\/\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}:\d{2}\b/g,
-    /√全对|半勾部分|逐问判分|判分共\s*\d+\s*题/g, /得分\s*\d+\s*\/\s*\d+/g
+    /√全对|半勾部分|逐问判分|判分共\s*\d+\s*题/g, /得分\s*\d+\s*\/\s*\d+/g,
+    /* 10.248：一镜到底后全篇展开，题头那串「平台状态条」更碍眼，一并清掉 */
+    /(九步解析|文字解析|视频解析)/g,
+    /（?圆圈看视频解析[^，。；\n]{0,10}/g,
+    /\d*\s*得分\s*\/?\s*满分\s*\d+\s*点?/g,
+    /我的作答\s*[:：]\s*（未作答）/g,
+    /评语\s*[:：][^\n]*/g,
+    /[📘📊🎬📍📌]/g
   ];
   var DROP_PREFIX = [
     '术语口径', '白话一句', '对着这道题问自己三句', '先看这一句', '每条公式过三件事',
@@ -155397,67 +155424,167 @@ boot();
     return out;
   }
 
-  /* ================= 4) 渲染 ================= */
-  function render() {
-    var seg = ST.segs[ST.i] || { tag: '—', body: '暂无可讲内容' };
-    /* 老引擎会在 open 之后异步往段里再塞模板句（依题依点/术语口径…），
-       所以每次渲染都过一遍清洗，幂等、便宜，保证白柜里始终没有套话。 */
+  /* ================= 4) 渲染（10.248 一镜到底） =================
+     不再「一段一屏」翻页：11 项全部排进同一个白柜里连续滚动，滚到哪就讲到哪。
+     滚动时把「当前进行到第几项」同步回 ST.i —— 舞台图形、抽屉高亮、进度、播放起点都跟着走。 */
+
+  /* 原题抽取：题面里夹着的成绩/批改/作答/答案等元信息全部剥掉，只留题目本身。
+     优先取错题本的 question 字段，取不到再从第 1 项【题干】块里抠。 */
+  var STEM_JUNK = [
+    /(📘|📊|🎬|📍|📌|◎|✗|√|✅|❌)\s*/g,
+    /(九步解析|文字解析|视频解析|批改结果|原卷定位|原卷批改痕迹|原卷批改)/g,
+    /（?圆圈看视频解析[^，。；\n]{0,10}/g,
+    /(选择|判断)\s*(错误|正确|×|√)/g,
+    /(错误|正确)\s*\d+\s*\/\s*/g,
+    /\d*\s*得分\s*\/?\s*满分\s*\d+\s*点?/g,
+    /得分\s*[:：]?\s*\d+\s*\/\s*\d+/g,
+    /我的作答\s*[:：][^\n]*/g, /我的答案\s*[:：][^\n]*/g,
+    /标准答案\s*[:：][^\n]*/g, /正确答案\s*[:：][^\n]*/g,
+    /评语\s*[:：][^\n]*/g, /知识点\s*[:：][^\n]{0,24}/g,
+    /（未作答）/g, /（未标答案）/g, /（题库未标答案）/g, /（知识点库未收录[^）]*）/g
+  ];
+  function stemOf(c) {
+    var raw = S(c && (c.question || c.stem)), m;
+    m = raw.match(/【题干】([\s\S]*?)(?=【|$)/);
+    if (m && S(m[1]).replace(/\s/g, '').length >= 8) raw = m[1];
+    if (!raw) {
+      var b0 = S((ST.segs[0] || {}).body);
+      m = b0.match(/【题干】([\s\S]*?)(?=【|$)/);
+      if (m) raw = m[1];
+    }
+    var s = raw, i;
+    for (i = 0; i < STEM_JUNK.length; i++) { try { s = s.replace(STEM_JUNK[i], ''); } catch (e) {} }
+    s = s.replace(/[ \t]{2,}/g, ' ').replace(/\n{2,}/g, '\n').replace(/^[\s、，,。.]+/, '').trim();
+    if (s.length > 900) s = s.slice(0, 900) + '…';
+    return s;
+  }
+
+  function segHTML(seg, i) {
+    return '<section class="cu-seg" id="cuSeg' + i + '" data-i="' + i + '" data-cur="' + (i === ST.i ? '1' : '0') + '">'
+      + '<div class="t"><span class="no">' + (i + 1) + '</span>' + esc(seg.tag || ('第' + (i + 1) + '项')) + '</div>'
+      + '<div class="b">' + esc(seg.body || '') + '</div>'
+      + '</section>';
+  }
+  function refreshDragTip() {
+    var s2 = $('cuSub'), tip = $('cuDragTip');
+    if (s2 && tip) tip.style.display = (s2.scrollHeight - s2.clientHeight > 6) ? 'block' : 'none';
+  }
+  function renderDrawer() {
+    var dr = $('cuDrawer');
+    if (!dr) return;
+    var h = '', k, i;
+    if (ST.sources && ST.sources.length > 1) {
+      h += '<div class="cu-srcrow"><span class="lbl">稿源（点击切换，只列可用的）</span>';
+      for (k = 0; k < ST.sources.length; k++) {
+        var sc = ST.sources[k];
+        h += '<span class="src" data-src="' + esc(sc.id) + '" data-cur="' + (ST.src === sc.id ? '1' : '0') + '">'
+          + esc(sc.label) + '<i>' + sc.n + '</i></span>';
+      }
+      h += '</div>';
+    }
+    for (i = 0; i < ST.segs.length; i++) {
+      h += '<div class="it" data-i="' + i + '" data-cur="' + (i === ST.i ? '1' : '0') + '">'
+        + (i + 1) + '. ' + esc(ST.segs[i].tag) + '</div>';
+    }
+    dr.innerHTML = h;
+  }
+  /* 只同步「当前项」相关 UI，不重建列表 —— 滚动时调它，正文不会跳动 */
+  function syncActive(i, forceViz) {
+    if (i < 0) i = 0;
+    if (i > ST.segs.length - 1) i = ST.segs.length - 1;
+    ST.i = i;
+    var seg = ST.segs[i] || { tag: '—', body: '暂无可讲内容' };
+    /* 老引擎会在 open 之后异步往段里再塞模板句，这里顺手再洗一遍（幂等） */
     try {
-      var _ref = S(ST.ctx && (ST.ctx.question || ST.ctx.stem));
-      var _b = cleanBody(seg.body, _ref);
-      if (_b && _b !== seg.body) seg.body = _b;
-      seg.tag = cleanTag(seg.tag) || seg.tag;
+      var _rb = cleanBody(seg.body, S(ST.ctx && (ST.ctx.question || ST.ctx.stem)));
+      if (_rb && _rb !== seg.body) {
+        seg.body = _rb;
+        var bb = D.querySelector('#cuSeg' + (i) + ' .b');
+        if (bb) bb.textContent = _rb;
+      }
     } catch (e) {}
-    var t = $('cuTag'), b = $('cuBody'), p = $('cuProg'), slot = $('cuVizSlot'), ti = $('cuTitle');
-    var kk = $('cuKicker'); if (kk) kk.textContent = '本题讲解 · 第 ' + (ST.i + 1) + ' / ' + ST.segs.length + ' 项';
-    if (t) t.textContent = seg.tag;
-    if (b) b.textContent = seg.body;
-    if (p) p.textContent = (ST.i + 1) + ' / ' + ST.segs.length;
-    if (ti) ti.textContent = (S(ST.ctx && (ST.ctx.subject || ST.ctx.subj)) || '本题') + ' · 本题讲解';
-    var sb = $('cuSrc');
-    if (sb) { var a0 = adapterById(ST.src); sb.textContent = a0 ? a0.label : '稿源'; }
-    if (slot) {
+    var kk = $('cuKicker');
+    if (kk) kk.textContent = '第 ' + (i + 1) + ' / ' + ST.segs.length + ' 项 · 全篇连续';
+    var p = $('cuProg'); if (p) p.textContent = (i + 1) + ' / ' + ST.segs.length;
+    var secs = D.querySelectorAll('#cuList .cu-seg'), k;
+    for (k = 0; k < secs.length; k++) secs[k].setAttribute('data-cur', k === i ? '1' : '0');
+    var its = D.querySelectorAll('#cuDrawer .it');
+    for (k = 0; k < its.length; k++) its[k].setAttribute('data-cur', k === i ? '1' : '0');
+    var slot = $('cuVizSlot');
+    if (slot && (forceViz || i !== ST._viz)) {
+      ST._viz = i;
       var html = '';
       try { html = VIZ.render(ST.ctx, seg); } catch (e) { html = ''; }
       slot.innerHTML = html || VIZ.render(null, { tag: '本题讲解', body: '' });
     }
-    var dr = $('cuDrawer');
-    if (dr) {
-      var h = '';
-      if (ST.sources && ST.sources.length > 1) {
-        h += '<div class="cu-srcrow"><span class="lbl">稿源（点击切换，只列可用的）</span>';
-        for (var k = 0; k < ST.sources.length; k++) {
-          var sc = ST.sources[k];
-          h += '<span class="src" data-src="' + esc(sc.id) + '" data-cur="' + (ST.src === sc.id ? '1' : '0') + '">'
-            + esc(sc.label) + '<i>' + sc.n + '</i></span>';
-        }
-        h += '</div>';
-      }
-      for (var i = 0; i < ST.segs.length; i++) {
-        h += '<div class="it" data-i="' + i + '" data-cur="' + (i === ST.i ? '1' : '0') + '">'
-          + (i + 1) + '. ' + esc(ST.segs[i].tag) + '</div>';
-      }
-      dr.innerHTML = h;
+    setTimeout(refreshDragTip, 30);
+  }
+  /* 把某一项滚到白柜顶部（点章节 / 上下翻 / 播放推进都走这里） */
+  function scrollToSeg(i, smooth) {
+    var sub = $('cuSub'), el = $('cuSeg' + i);
+    if (!sub || !el) return;
+    ST.lock = true;
+    var d = el.getBoundingClientRect().top - sub.getBoundingClientRect().top;
+    var top = Math.max(0, sub.scrollTop + d - 3);
+    try { sub.scrollTo({ top: top, behavior: smooth ? 'smooth' : 'auto' }); }
+    catch (e) { sub.scrollTop = top; }
+    setTimeout(function () { ST.lock = false; }, smooth ? 460 : 80);
+  }
+  /* 由滚动位置反推当前项：取「顶端已越过容器上沿」的最后一段 */
+  function nearestSeg() {
+    var sub = $('cuSub');
+    if (!sub) return ST.i;
+    var secs = sub.querySelectorAll('.cu-seg');
+    if (!secs.length) return ST.i;
+    var base = sub.getBoundingClientRect().top + 12, idx = 0;
+    for (var i = 0; i < secs.length; i++) {
+      if (secs[i].getBoundingClientRect().top <= base) idx = i; else break;
     }
-    /* 换段后正文回到顶部；只有内容真的超出白框高度，才亮「上下拖动看全文」提示 */
-    var subEl0 = $('cuSub'); if (subEl0) subEl0.scrollTop = 0;
-    setTimeout(function () {
-      var s2 = $('cuSub'), tip = $('cuDragTip');
-      if (s2 && tip) tip.style.display = (s2.scrollHeight - s2.clientHeight > 6) ? 'block' : 'none';
-    }, 30);
+    if (sub.scrollTop + sub.clientHeight >= sub.scrollHeight - 10) idx = secs.length - 1;
+    return idx;
   }
 
-  /* 静音总闸（10.246）：打开讲解绝不自动出声，只有点「🔊 朗读」才播。
+  function render(scroll) {
+    var ref = S(ST.ctx && (ST.ctx.question || ST.ctx.stem)), i;
+    for (i = 0; i < ST.segs.length; i++) {
+      try {
+        var b = cleanBody(ST.segs[i].body, ref);
+        if (b && b !== ST.segs[i].body) ST.segs[i].body = b;
+        ST.segs[i].tag = cleanTag(ST.segs[i].tag) || S(ST.segs[i].tag);
+      } catch (e) {}
+    }
+    var list = $('cuList'), h = '';
+    if (list) {
+      for (i = 0; i < ST.segs.length; i++) h += segHTML(ST.segs[i], i);
+      list.innerHTML = h;
+    }
+    var ti = $('cuTitle');
+    if (ti) ti.textContent = (S(ST.ctx && (ST.ctx.subject || ST.ctx.subj)) || '本题') + ' · 本题讲解';
+    var sb = $('cuSrc');
+    if (sb) { var a0 = adapterById(ST.src); sb.textContent = a0 ? a0.label : '稿源'; }
+    var qb = $('cuQbd');
+    if (qb) qb.textContent = ST.stem || '（未取到题面）';
+    var q0 = $('cuQ');
+    if (q0) q0.style.display = ST.stem ? '' : 'none';   /* 没题面就不占位，图形独占舞台 */
+    renderDrawer();
+    syncActive(ST.i, true);
+    if (scroll !== false) scrollToSeg(ST.i, false);
+  }
+
+  /* 静音总闸（10.246）：打开讲解绝不自动出声，只有点「▶ 播放」才播。
      为什么需要它：老引擎 C121/CTV9/CTV9X 在 open 之后 200–1500ms 会自己 speak()，
      而新壳已接管舞台 → 表现为「一打开就有人念」。保护期内反复 cancel 压住，
-     用户一旦主动点朗读立刻解除保护，绝不误杀。 */
+     用户一旦主动点播放立刻解除保护，绝不误杀。 */
   var QUIET = { until: 0, user: false, iv: 0 };
   function cancelTTS() { try { if (W.speechSynthesis && W.speechSynthesis.cancel) W.speechSynthesis.cancel(); } catch (e) {} }
+  function setPlayBtn(on) {
+    var pb = $('cuPlay');
+    if (pb) pb.textContent = on ? '⏸ 暂停' : '▶ 播放';
+  }
   function silence(ms) {
     ST.ttsToken++;
     ST.playing = false;
-    var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读';
-    var sk = $('cuSpk'); if (sk) sk.textContent = '🔊 朗读';
+    setPlayBtn(false);
     QUIET.user = false;
     QUIET.until = Date.now() + (ms == null ? 2400 : ms);
     cancelTTS();
@@ -155473,49 +155600,63 @@ boot();
   function stopTTS() {
     ST.ttsToken++;
     ST.playing = false;
-    var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读';
+    setPlayBtn(false);
     cancelTTS();
   }
 
+  /* 播放（10.248）：不再只念当前一段。
+     从「当前滚到的这一项」开始，一项接一项念下去，念到哪白柜就自动滚到哪，
+     直到全篇念完或用户点暂停。「播完一项自动念下一项」在设置里可关（关了就只念当前项）。 */
   function speak() {
-    if (!W.speechSynthesis || !W.SpeechSynthesisUtterance) { toast('此环境不支持语音朗读'); return; }
+    if (!W.speechSynthesis || !W.SpeechSynthesisUtterance) { toast('此环境不支持语音播放'); return; }
     QUIET.user = true; QUIET.until = 0;
     if (QUIET.iv) { clearInterval(QUIET.iv); QUIET.iv = 0; }
     stopTTS();
-    var tok = ST.ttsToken;
-    var seg = ST.segs[ST.i] || {};
+    ST.playIdx = (ST.i >= 0 && ST.i < ST.segs.length) ? ST.i : 0;
+    ST.playing = true;
+    setPlayBtn(true);
+    saySeg(ST.ttsToken);
+  }
+  function saySeg(tok) {
+    if (tok !== ST.ttsToken || !ST.playing) return;
+    var i = ST.playIdx;
+    if (i >= ST.segs.length) { ST.playing = false; setPlayBtn(false); return; }
+    var seg = ST.segs[i] || {};
     /* 念之前也洗一遍：避免把异步追加进来的套话念出来 */
     try {
       var _rb = cleanBody(seg.body, S(ST.ctx && (ST.ctx.question || ST.ctx.stem)));
       if (_rb && _rb !== seg.body) seg.body = _rb;
     } catch (e) {}
+    if (i !== ST.i) syncActive(i, false);
+    scrollToSeg(i, true);
     var txt = S(seg.tag) + '。' + S(seg.body);
-    if (!txt.trim()) return;
-    try {
-      var u = new W.SpeechSynthesisUtterance(txt);
-      u.lang = 'zh-CN'; u.rate = ST.rate;
-      u.onend = function () {
-        if (tok !== ST.ttsToken) return;
-        ST.playing = false;
-        var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读';
-        /* 连播：念完自动进下一段。默认关，只有用户在「⚙ 设置」里打开才走。 */
-        if (ST.chain && ST.i < ST.segs.length - 1) {
-          ST.i++;
-          render();
-          setTimeout(function () { if (ST.chain && ST.open) speak(); }, 140);
-        }
-      };
-      ST.playing = true;
-      var pb2 = $('cuPlay'); if (pb2) pb2.textContent = '⏸ 停止';
-      W.speechSynthesis.speak(u);
-    } catch (e) {}
+    if (!txt.replace(/\s/g, '')) { ST.playIdx = i + 1; return saySeg(tok); }
+    var u;
+    try { u = new W.SpeechSynthesisUtterance(txt); }
+    catch (e) { ST.playing = false; setPlayBtn(false); return; }
+    u.lang = 'zh-CN'; u.rate = ST.rate;
+    u.onend = function () {
+      if (tok !== ST.ttsToken || !ST.playing) return;
+      if (ST.chain && ST.playIdx < ST.segs.length - 1) {
+        ST.playIdx++;
+        setTimeout(function () { saySeg(tok); }, 120);
+      } else {
+        ST.playing = false; setPlayBtn(false);
+      }
+    };
+    u.onerror = function () {
+      if (tok !== ST.ttsToken) return;
+      ST.playing = false; setPlayBtn(false);
+    };
+    try { W.speechSynthesis.speak(u); }
+    catch (e) { ST.playing = false; setPlayBtn(false); }
   }
 
   /* ================= 5) 统一问答通道 =================
      复用老引擎同一条 AI 链路：__CTB_AICHAT__ → aiRecogChat → aiChat（VQA131 也是这条）。
      不调 W.VQA131.ask，因为它前置要求 S.host（必须先识别到视频宿主），新壳没有 video/iframe，会被挡回。
      行为对齐老条：提问即暂停讲解 → 解答 → 答完按「续播」开关决定是否朗读。
-     10.246：auto 默认改为关 —— 不点「🔊 朗读」就一点声音都不出。 */
+     10.246：auto 默认改为关 —— 不点「▶ 播放」就一点声音都不出。 */
   var QA = { busy: false, auto: false, lastQ: '' };
 
   function qaPrompt(q) {
@@ -155624,7 +155765,9 @@ boot();
     if (!ST.segs.length) ST.segs = [{ tag: '本题讲解', body: '未取到讲解内容（题目为空或稿源未就绪）。' }];
     /* 进白柜前统一洗稿：去掉平台操作文案与通用套话，只留这道题本身 */
     ST.segs = polishSegs(ST.segs, c);
-    ST.i = 0; ST.minimized = false;
+    ST.i = 0; ST.minimized = false; ST.playIdx = 0; ST._viz = -1;
+    /* 原题条：常驻在图形上方，直到本题讲解结束才撤 */
+    ST.stem = stemOf(c);
     var m = $('ctbUniMask');
     if (m) { m.classList.remove('cu-mini'); m.setAttribute('data-on', '1'); }
     /* 统一态标记：老问答条全部由 CSS 隐去，只留新壳这一条 */
@@ -155633,7 +155776,7 @@ boot();
     ST.open = true;
     /* 10.246：打开即静音 + 续播按开关初始态。
        老引擎（C121/CTV9）常在 open 后延迟 200–1500ms 自己开念，这里给 2.4 秒保护期压住；
-       用户点「🔊 朗读」会立刻解除保护，不影响主动朗读。 */
+       用户点「▶ 播放」会立刻解除保护，不影响主动播放。 */
     setAuto(QA.auto);
     setChain(ST.chain);
     setRate(ST.rate);
@@ -155645,6 +155788,9 @@ boot();
   function close() {
     silence(0);
     ST.open = false;
+    ST.stem = ''; ST.playIdx = 0; ST.lock = false;
+    var q0 = $('cuQ'); if (q0) q0.setAttribute('data-open', '0');
+    var qm0 = $('cuQMore'); if (qm0) qm0.textContent = '展开全文';
     var m = $('ctbUniMask');
     if (m) { m.setAttribute('data-on', '0'); m.classList.remove('cu-mini'); }
     try { D.body.classList.remove('ctb-uni-on'); } catch (e) {}
@@ -155684,8 +155830,22 @@ boot();
       var dr = $('cuDrawer'); if (dr) dr.setAttribute('data-on', '1');
     });
     on('cuPlay', 'click', function () { if (ST.playing) stopTTS(); else speak(); });
-    on('cuPrev', 'click', function () { if (ST.i > 0) { ST.i--; stopTTS(); render(); } });
-    on('cuNext', 'click', function () { if (ST.i < ST.segs.length - 1) { ST.i++; stopTTS(); render(); } });
+    /* 原题条：默认两行，点一下展开全文 / 收起 */
+    on('cuQMore', 'click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      var q = $('cuQ'); if (!q) return;
+      var op = q.getAttribute('data-open') === '1' ? '0' : '1';
+      q.setAttribute('data-open', op);
+      var m2 = $('cuQMore'); if (m2) m2.textContent = op === '1' ? '收起' : '展开全文';
+    });
+    on('cuPrev', 'click', function () {
+      var t = Math.max(0, ST.i - 1);
+      stopTTS(); syncActive(t, false); scrollToSeg(t, true);
+    });
+    on('cuNext', 'click', function () {
+      var t = Math.min(ST.segs.length - 1, ST.i + 1);
+      stopTTS(); syncActive(t, false); scrollToSeg(t, true);
+    });
     on('cuMini', 'click', function () {
       var mini = m.classList.toggle('cu-mini');
       var el = $('cuMini'); if (el) el.textContent = mini ? '展开' : '收起';
@@ -155705,7 +155865,7 @@ boot();
       pn.addEventListener('click', function (e) {
         e.stopPropagation();
         var t = e.target, rate = t && t.getAttribute && t.getAttribute('data-rate');
-        if (rate) { setRate(rate); toast('朗读语速 ' + ST.rate.toFixed(1) + '×'); return; }
+        if (rate) { setRate(rate); toast('播放语速 ' + ST.rate.toFixed(1) + '×'); return; }
         if (t && t.id === 'setChain') { setChain(!ST.chain); toast(ST.chain ? '念完自动进下一段：开' : '念完自动进下一段：关'); return; }
         if (t && t.id === 'setAuto') { setAuto(!QA.auto); toast(QA.auto ? '答疑答完自动念：开' : '答疑答完自动念：关'); return; }
       }, false);
@@ -155734,7 +155894,7 @@ boot();
       var sid = t.getAttribute('data-src');
       if (sid) { setSource(sid); return; }
       var i = parseInt(t.getAttribute('data-i'), 10);
-      if (!isNaN(i)) { ST.i = i; stopTTS(); render(); }
+      if (!isNaN(i)) { stopTTS(); syncActive(i, false); scrollToSeg(i, true); }
     }, false);
 
     /* 点面板以外任何地方收起设置面板（捕获阶段，先于业务点击） */
@@ -155762,8 +155922,8 @@ boot();
     D.addEventListener('keydown', function (e) {
       if (!ST.open) return;
       if (e.key === 'Escape') { close(); }
-      else if (e.key === 'ArrowRight') { if (ST.i < ST.segs.length - 1) { ST.i++; stopTTS(); render(); } }
-      else if (e.key === 'ArrowLeft') { if (ST.i > 0) { ST.i--; stopTTS(); render(); } }
+      else if (e.key === 'ArrowRight') { var nr = Math.min(ST.segs.length - 1, ST.i + 1); stopTTS(); syncActive(nr, false); scrollToSeg(nr, true); }
+      else if (e.key === 'ArrowLeft') { var nl = Math.max(0, ST.i - 1); stopTTS(); syncActive(nl, false); scrollToSeg(nl, true); }
     }, false);
 
     /* 白框（讲解正文）手指上下拖动（10.246）：
@@ -155771,6 +155931,17 @@ boot();
        松手停在原处不回弹。内容没超出时不拦，避免抢掉页面正常手势。 */
     var subEl = $('cuSub');
     if (subEl) {
+      /* 一镜到底：滚到哪就同步到第几项（节流，避免每帧重算 rect） */
+      var tick = 0;
+      subEl.addEventListener('scroll', function () {
+        if (tick) return;
+        tick = setTimeout(function () {
+          tick = 0;
+          if (!ST.open || ST.lock) return;
+          var idx = nearestSeg();
+          if (idx !== ST.i) syncActive(idx, false);
+        }, 110);
+      }, { passive: true });
       var sy = 0, st = 0, dragging = false;
       subEl.addEventListener('touchstart', function (e) {
         if (!e.touches || e.touches.length !== 1) return;
