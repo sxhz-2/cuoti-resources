@@ -154777,7 +154777,7 @@ boot();
   'use strict';
   var W = window, D = document;
   if (W.__CTB_UNI_BOOT__) return; W.__CTB_UNI_BOOT__ = true;
-  var BUILD = '10.245-uni-p2';
+  var BUILD = '10.246-quiet-p3';
 
   function S(v) { return v == null ? '' : String(v); }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -155157,8 +155157,18 @@ boot();
     '.cu-cap{margin-top:8px;font-size:12px;color:#8fa8bf;letter-spacing:.4px;}',
     '.cu-spk{position:absolute;right:20px;top:16px;background:rgba(15,32,48,.85);border:1px solid rgba(127,211,255,.28);',
     'color:#cfe6f8;border-radius:20px;padding:6px 13px;font-size:12.5px;cursor:pointer;}',
-    '.cu-sub{flex:0 0 auto;margin:0 14px 8px;background:rgba(12,26,40,.92);border:1px solid rgba(120,170,215,.20);',
-    'border-radius:12px;padding:12px 15px;max-height:30vh;overflow:auto;}',
+    /* 白框（讲解正文）：手指可直接上下拖动定位看全文。
+       max-height 抬到 46vh；touch-action:pan-y 让手动接管 scrollTop 时不会被浏览器滚动链抢走；
+       overscroll-behavior:contain 防止拖到底把整页带着弹。 */
+    '.cu-sub{flex:0 0 auto;position:relative;margin:0 14px 8px;background:rgba(12,26,40,.92);border:1px solid rgba(120,170,215,.20);',
+    'border-radius:12px;padding:12px 15px;max-height:46vh;overflow-y:auto;overflow-x:hidden;',
+    '-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;}',
+    '.cu-sub::-webkit-scrollbar{width:6px;}',
+    '.cu-sub::-webkit-scrollbar-thumb{background:rgba(127,211,255,.30);border-radius:3px;}',
+    '.cu-sub::-webkit-scrollbar-track{background:transparent;}',
+    '.cu-dragtip{position:absolute;right:10px;top:7px;display:none;font-size:10.5px;line-height:1.5;',
+    'color:#8fa8bf;background:rgba(8,18,28,.78);border:1px solid rgba(120,170,215,.22);',
+    'border-radius:10px;padding:1px 7px;pointer-events:none;}',
     '.cu-sub .k{font-size:11.5px;color:#7fd3ff;letter-spacing:1px;margin-bottom:5px;}',
     '.cu-sub .t{font-size:14.5px;font-weight:600;color:#ffd479;margin-bottom:6px;}',
     '.cu-sub .b{font-size:13.5px;line-height:1.85;color:#d6e6f4;white-space:pre-wrap;}',
@@ -155213,6 +155223,7 @@ boot();
       + '<div class="cu-drawer" id="cuDrawer"><!--toc--></div>'
       + '</div>'
       + '<div class="cu-sub" id="cuSub">'
+      + '<div class="cu-dragtip" id="cuDragTip">↕ 上下拖动看全文</div>'
       + '<div class="k" id="cuKicker">本题讲解</div>'
       + '<div class="t" id="cuTag">—</div>'
       + '<div class="b" id="cuBody">—</div>'
@@ -155227,9 +155238,9 @@ boot();
       + '<span id="cuProg">0 / 0</span>'
       + '<button class="cu-btn" id="cuPrev" style="padding:4px 9px">◀</button>'
       + '<button class="cu-btn" id="cuNext" style="padding:4px 9px">▶</button>'
-      + '<span id="cuPlay" style="cursor:pointer">⏸ 暂停</span>'
+      + '<span id="cuPlay" style="cursor:pointer">🔊 朗读</span>'
       + '<span id="cuChan">通道：自动</span>'
-      + '<span id="cuAuto" style="cursor:pointer;color:#8ce99a">续播开</span>'
+      + '<span id="cuAuto" style="cursor:pointer;color:#8ce99a">续播关</span>'
       + '<span id="cuMini" style="cursor:pointer;margin-left:auto">收起</span>'
       + '<span id="cuBadge" style="opacity:.55">P0 · ' + BUILD + '</span>'
       + '</div>'
@@ -155271,17 +155282,48 @@ boot();
       }
       dr.innerHTML = h;
     }
+    /* 换段后正文回到顶部；只有内容真的超出白框高度，才亮「上下拖动看全文」提示 */
+    var subEl0 = $('cuSub'); if (subEl0) subEl0.scrollTop = 0;
+    setTimeout(function () {
+      var s2 = $('cuSub'), tip = $('cuDragTip');
+      if (s2 && tip) tip.style.display = (s2.scrollHeight - s2.clientHeight > 6) ? 'block' : 'none';
+    }, 30);
   }
 
+  /* 静音总闸（10.246）：打开讲解绝不自动出声，只有点「🔊 朗读」才播。
+     为什么需要它：老引擎 C121/CTV9/CTV9X 在 open 之后 200–1500ms 会自己 speak()，
+     而新壳已接管舞台 → 表现为「一打开就有人念」。保护期内反复 cancel 压住，
+     用户一旦主动点朗读立刻解除保护，绝不误杀。 */
+  var QUIET = { until: 0, user: false, iv: 0 };
+  function cancelTTS() { try { if (W.speechSynthesis && W.speechSynthesis.cancel) W.speechSynthesis.cancel(); } catch (e) {} }
+  function silence(ms) {
+    ST.ttsToken++;
+    ST.playing = false;
+    var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读';
+    var sk = $('cuSpk'); if (sk) sk.textContent = '🔊 朗读';
+    QUIET.user = false;
+    QUIET.until = Date.now() + (ms == null ? 2400 : ms);
+    cancelTTS();
+    if (QUIET.iv) { clearInterval(QUIET.iv); QUIET.iv = 0; }
+    if (!(ms > 0)) return;
+    QUIET.iv = setInterval(function () {
+      if (QUIET.user || Date.now() > QUIET.until) { clearInterval(QUIET.iv); QUIET.iv = 0; return; }
+      cancelTTS();
+      /* 老引擎以为自己在播就不会重发，顺手把它的播放标志压平，避免「暂停后又自己续上」 */
+      try { if (W.V121) W.V121.playing = false; } catch (e) {}
+    }, 280);
+  }
   function stopTTS() {
     ST.ttsToken++;
     ST.playing = false;
-    var pb = $('cuPlay'); if (pb) pb.textContent = '▶ 续播';
-    try { if (W.speechSynthesis) W.speechSynthesis.cancel(); } catch (e) {}
+    var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读';
+    cancelTTS();
   }
 
   function speak() {
     if (!W.speechSynthesis || !W.SpeechSynthesisUtterance) { toast('此环境不支持语音朗读'); return; }
+    QUIET.user = true; QUIET.until = 0;
+    if (QUIET.iv) { clearInterval(QUIET.iv); QUIET.iv = 0; }
     stopTTS();
     var tok = ST.ttsToken;
     var seg = ST.segs[ST.i] || {};
@@ -155290,9 +155332,9 @@ boot();
     try {
       var u = new W.SpeechSynthesisUtterance(txt);
       u.lang = 'zh-CN'; u.rate = 1.0;
-      u.onend = function () { if (tok === ST.ttsToken) { ST.playing = false; var pb = $('cuPlay'); if (pb) pb.textContent = '▶ 续播'; } };
+      u.onend = function () { if (tok === ST.ttsToken) { ST.playing = false; var pb = $('cuPlay'); if (pb) pb.textContent = '🔊 朗读'; } };
       ST.playing = true;
-      var pb2 = $('cuPlay'); if (pb2) pb2.textContent = '⏸ 暂停';
+      var pb2 = $('cuPlay'); if (pb2) pb2.textContent = '⏸ 停止';
       W.speechSynthesis.speak(u);
     } catch (e) {}
   }
@@ -155300,8 +155342,9 @@ boot();
   /* ================= 5) 统一问答通道 =================
      复用老引擎同一条 AI 链路：__CTB_AICHAT__ → aiRecogChat → aiChat（VQA131 也是这条）。
      不调 W.VQA131.ask，因为它前置要求 S.host（必须先识别到视频宿主），新壳没有 video/iframe，会被挡回。
-     行为对齐老条：提问即暂停讲解 → 解答 → 答完按「续播开」自动接着讲。 */
-  var QA = { busy: false, auto: true, lastQ: '' };
+     行为对齐老条：提问即暂停讲解 → 解答 → 答完按「续播」开关决定是否朗读。
+     10.246：auto 默认改为关 —— 不点「🔊 朗读」就一点声音都不出。 */
+  var QA = { busy: false, auto: false, lastQ: '' };
 
   function qaPrompt(q) {
     var c = ST.ctx || {};
@@ -155401,12 +155444,17 @@ boot();
     try { D.body.classList.add('ctb-uni-on'); } catch (e) {}
     render();
     ST.open = true;
+    /* 10.246：打开即静音 + 续播按开关初始态。
+       老引擎（C121/CTV9）常在 open 后延迟 200–1500ms 自己开念，这里给 2.4 秒保护期压住；
+       用户点「🔊 朗读」会立刻解除保护，不影响主动朗读。 */
+    setAuto(QA.auto);
+    silence(2400);
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
     return true;
   }
 
   function close() {
-    stopTTS();
+    silence(0);
     ST.open = false;
     var m = $('ctbUniMask');
     if (m) { m.setAttribute('data-on', '0'); m.classList.remove('cu-mini'); }
@@ -155505,6 +155553,42 @@ boot();
       else if (e.key === 'ArrowRight') { if (ST.i < ST.segs.length - 1) { ST.i++; stopTTS(); render(); } }
       else if (e.key === 'ArrowLeft') { if (ST.i > 0) { ST.i--; stopTTS(); render(); } }
     }, false);
+
+    /* 白框（讲解正文）手指上下拖动（10.246）：
+       不依赖浏览器原生滚动 —— WebView 里 flex 子项常滚不动，这里直接接管 scrollTop，拖多少走多少、
+       松手停在原处不回弹。内容没超出时不拦，避免抢掉页面正常手势。 */
+    var subEl = $('cuSub');
+    if (subEl) {
+      var sy = 0, st = 0, dragging = false;
+      subEl.addEventListener('touchstart', function (e) {
+        if (!e.touches || e.touches.length !== 1) return;
+        sy = e.touches[0].clientY; st = subEl.scrollTop; dragging = true;
+      }, { passive: true });
+      subEl.addEventListener('touchmove', function (e) {
+        if (!dragging || !e.touches || e.touches.length !== 1) return;
+        var max = subEl.scrollHeight - subEl.clientHeight;
+        if (max <= 1) return;                       /* 没超出：放行，不拦手势 */
+        if (e.cancelable) { try { e.preventDefault(); } catch (x) {} }
+        var dy = e.touches[0].clientY - sy;
+        subEl.scrollTop = Math.max(0, Math.min(max, st - dy));
+      }, { passive: false });
+      subEl.addEventListener('touchend', function () { dragging = false; }, { passive: true });
+      subEl.addEventListener('touchcancel', function () { dragging = false; }, { passive: true });
+      /* 桌面 / 触控板：按住白框上下拖也能滚，方便在电脑上核对长文 */
+      var my = 0, mst = 0, mdrag = false;
+      subEl.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        if (subEl.scrollHeight - subEl.clientHeight <= 1) return;
+        my = e.clientY; mst = subEl.scrollTop; mdrag = true;
+      });
+      D.addEventListener('mousemove', function (e) {
+        if (!mdrag) return;
+        var max = subEl.scrollHeight - subEl.clientHeight;
+        if (e.cancelable) { try { e.preventDefault(); } catch (x) {} }
+        subEl.scrollTop = Math.max(0, Math.min(max, mst - (e.clientY - my)));
+      });
+      D.addEventListener('mouseup', function () { mdrag = false; });
+    }
   }
 
   /* ================= 8) 入口收敛：包住老全局，ON 走新壳，OFF 原样 ================= */
