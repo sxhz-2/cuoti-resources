@@ -154777,7 +154777,7 @@ boot();
   'use strict';
   var W = window, D = document;
   if (W.__CTB_UNI_BOOT__) return; W.__CTB_UNI_BOOT__ = true;
-  var BUILD = '10.248-one-flow';
+  var BUILD = '10.249-3d-gk11';
 
   function S(v) { return v == null ? '' : String(v); }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -155225,6 +155225,21 @@ boot();
     'body.ctb-uni-on #vqa131Dock,body.ctb-uni-on #vqa131Fab,body.ctb-uni-on #vqa131Ime,',
     'body.ctb-uni-on #c124QA,body.ctb-uni-on #c124QAFab,',
     'body.ctb-uni-on #ldLive,body.ctb-uni-on #ctb175VidQaBox{display:none!important;}',
+    /* 3D 演示（10.249）：舞台交给 canvas，手指旋转 / 双指缩放；工具条浮在画面顶部 */
+    '.v3-back{position:absolute;right:8px;top:8px;z-index:5;font-size:11px;padding:3px 9px;}',
+    /* 真人视频层 */
+    '.cu-vidl{position:absolute;inset:0;z-index:20;background:rgba(4,10,16,.97);display:none;flex-direction:column;}',
+    '.cu-vidl[data-on="1"]{display:flex;}',
+    '.cu-vidl .hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid rgba(120,170,215,.20);',
+    'font-size:13px;color:#dbe9f6;flex:0 0 auto;}',
+    '.cu-vidl .vd-x{margin-left:auto;color:#8fb6d6;font-size:12px;cursor:pointer;}',
+    '.cu-vidl .bd{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:10px;overflow:auto;}',
+    '.cu-vidl video{width:100%;max-height:100%;background:#000;border-radius:10px;}',
+    '.cu-vidl iframe{width:100%;height:100%;min-height:200px;border:0;border-radius:10px;background:#000;}',
+    '.cu-vidl .tip{font-size:12.5px;color:#93aec6;line-height:1.85;text-align:center;max-width:340px;}',
+    '.cu-vidl .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}',
+    '.cu-vidl .uin{width:100%;max-width:360px;background:rgba(255,255,255,.06);border:1px solid rgba(120,170,215,.26);',
+    'border-radius:9px;padding:8px 11px;color:#e8f1fa;font-size:13px;outline:none;}',
     '@media(max-width:520px){.cu-drawer{left:14px;right:14px;width:auto;}}'
   ].join('');
 
@@ -155242,7 +155257,7 @@ boot();
     m.innerHTML =
       '<div class="cu-top">'
       + '<div class="cu-title" id="cuTitle">本题讲解</div>'
-      + '<button class="cu-btn" id="cuExport">生成视频文件</button>'
+      + '<button class="cu-btn" id="cuExport">导出稿</button>'
       + '<button class="cu-btn" id="cuFull">全屏</button>'
       + '<button class="cu-btn" id="cuSrc">稿源</button>'
       + '<button class="cu-btn" id="cuChap">章节</button>'
@@ -155253,8 +155268,13 @@ boot();
       + '<div class="qhd"><span>📌 原题 · 常驻</span><span class="qm" id="cuQMore">展开全文</span></div>'
       + '<div class="qbd" id="cuQbd">—</div>'
       + '</div>'
-      + '<div id="cuVizSlot" style="width:100%;flex:1 1 auto;display:flex;min-height:0"><!--viz--></div>'
+      + '<div id="cuVizSlot" style="width:100%;flex:1 1 auto;display:flex;min-height:0;position:relative"><!--viz--></div>'
       + '<div class="cu-drawer" id="cuDrawer"><!--toc--></div>'
+      + '<div class="cu-vidl" id="cuVidLayer" data-on="0">'
+      + '<div class="hd"><span>🎬 真人视频讲解</span>'
+      + '<span class="vd-x" id="cuVidClose">✕ 关闭</span></div>'
+      + '<div class="bd" id="cuVidBody"></div>'
+      + '</div>'
       + '</div>'
       + '<div class="cu-sub" id="cuSub">'
       + '<div class="cu-dragtip" id="cuDragTip">↕ 上下拖动看全文</div>'
@@ -155272,6 +155292,7 @@ boot();
       + '<button class="cu-btn" id="cuPrev" style="padding:4px 9px">◀</button>'
       + '<button class="cu-btn" id="cuNext" style="padding:4px 9px">▶</button>'
       + '<button class="cu-btn" id="cuPlay" style="padding:4px 10px">▶ 播放</button>'
+      + '<button class="cu-btn" id="cuVideo" style="padding:4px 10px">🎬 真人视频</button>'
       + '<button class="cu-btn" id="cuSet" style="padding:4px 9px">⚙ 设置</button>'
       + '<span id="cuChan" style="display:none">通道：自动</span>'
       + '<span id="cuMini" style="cursor:pointer;margin-left:auto">收起</span>'
@@ -155516,6 +155537,25 @@ boot();
       var html = '';
       try { html = VIZ.render(ST.ctx, seg); } catch (e) { html = ''; }
       slot.innerHTML = html || VIZ.render(null, { tag: '本题讲解', body: '' });
+      /* 10.249：默认由 3D 演示接管舞台（按本题题型与题面数值生成）；
+         用户在工具条选了「平面图」时 mount 返回 false，保留上面的 SVG 并给一个切回按钮。 */
+      var mounted = false;
+      try {
+        if (W.__CTB_V3__) mounted = W.__CTB_V3__.mount(slot, ST.ctx, seg, i, ST.segs.length);
+      } catch (e) { mounted = false; }
+      if (!mounted) {
+        var bk = D.createElement('button');
+        bk.className = 'cu-btn v3-back';
+        bk.id = 'cuV3Back';
+        bk.textContent = '🧊 3D 演示';
+        bk.addEventListener('click', function (ev) {
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          try { if (W.__CTB_V3__) W.__CTB_V3__.setMode('3d'); } catch (e) { }
+          ST._viz = -1;
+          syncActive(ST.i, true);
+        }, false);
+        slot.appendChild(bk);
+      }
     }
     setTimeout(refreshDragTip, 30);
   }
@@ -155787,6 +155827,8 @@ boot();
 
   function close() {
     silence(0);
+    try { if (W.__CTB_V3__) W.__CTB_V3__.unmount(); } catch (e) { }
+    try { closeVid(); } catch (e) { }
     ST.open = false;
     ST.stem = ''; ST.playIdx = 0; ST.lock = false;
     var q0 = $('cuQ'); if (q0) q0.setAttribute('data-open', '0');
@@ -155812,6 +155854,121 @@ boot();
     } catch (e) {}
   }
 
+  /* ================= 6.9) 真人视频（10.249） =================
+     用户要求：页面底部加「真人视频」按钮。
+     没有内置视频资源，所以做成「真能播」而不是摆一个死按钮：
+       ① 错题记录自带视频地址（video/videoUrl/vurl/vsrc/mp4）→ 直接播；
+       ② 否则按这道题记住用户选过的链接（localStorage，按题 id 或题面哈希）；
+       ③ 都没有给两条入口：选本机视频（blob，只本次有效）、粘贴链接（B 站自动换播放器）。
+     关闭 / 退出讲解时一律 pause + 释放 objectURL，避免后台偷跑流量。 */
+  var VID = { url: '', obj: '' };
+
+  function hashOf(s) {
+    var h = 5381, i;
+    s = S(s);
+    for (i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+  function vidKey() {
+    var c = ST.ctx || {};
+    return 'ctb_vid_' + (S(c.id) || hashOf(S(c.question || c.stem).slice(0, 80)));
+  }
+  function vidStored() {
+    try { return S(localStorage.getItem(vidKey())); } catch (e) { return ''; }
+  }
+  function vidFromCtx() {
+    var c = ST.ctx || {}, ks = ['video', 'videoUrl', 'vurl', 'vsrc', 'videoSrc', 'mp4'], i, v;
+    for (i = 0; i < ks.length; i++) {
+      v = c[ks[i]];
+      if (typeof v === 'string' && /^(https?:|blob:|file:|data:|\/)/i.test(v)) return v;
+    }
+    return '';
+  }
+  function isBili(u) { return /bilibili\.com|b23\.tv|bili2233/i.test(u); }
+  function biliEmbed(u) {
+    var m = u.match(/(BV[0-9A-Za-z]{10})/);
+    return m ? ('https://player.bilibili.com/player.html?bvid=' + m[1] + '&high_quality=1&danmaku=0') : '';
+  }
+  function vidPickHtml() {
+    return '<div class="row"><button class="cu-btn" id="cuVidPick">📁 选本机视频</button>'
+      + '<button class="cu-btn" id="cuVidUrlBtn">🔗 粘贴链接</button></div>'
+      + '<input type="file" id="cuVidFile" accept="video/*" style="display:none">';
+  }
+  function vidBindPick() {
+    var pk = $('cuVidPick'), fl = $('cuVidFile'), ub = $('cuVidUrlBtn');
+    if (pk && fl) {
+      pk.addEventListener('click', function () { try { fl.click(); } catch (e) { } }, false);
+      fl.addEventListener('change', function () {
+        var f = fl.files && fl.files[0];
+        if (!f) return;
+        try { if (VID.obj) URL.revokeObjectURL(VID.obj); } catch (e) { }
+        VID.obj = URL.createObjectURL(f);
+        vidPlay(VID.obj);
+      }, false);
+    }
+    if (ub) {
+      ub.addEventListener('click', function () {
+        var bd = $('cuVidBody');
+        if (!bd) return;
+        bd.innerHTML = '<div class="tip">粘贴视频直链，或 B 站视频页地址（会自动换成播放器）。</div>'
+          + '<input class="uin" id="cuVidIn" placeholder="https://... 或 https://www.bilibili.com/video/BVxxxx">'
+          + '<div class="row"><button class="cu-btn" id="cuVidGo">播放并记住</button></div>';
+        var go = function () {
+          var ip = $('cuVidIn'), u = S(ip && ip.value).trim();
+          if (!/^https?:\/\//i.test(u)) { toast('请填 http(s) 开头的链接'); return; }
+          try { localStorage.setItem(vidKey(), u); } catch (e) { }
+          vidPlay(u);
+        };
+        var gb = $('cuVidGo'); if (gb) gb.addEventListener('click', go, false);
+        var ip2 = $('cuVidIn');
+        if (ip2) {
+          ip2.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); }, false);
+          try { ip2.focus(); } catch (e) { }
+        }
+      }, false);
+    }
+  }
+  function vidPlay(url) {
+    var bd = $('cuVidBody');
+    if (!bd) return;
+    VID.url = url;
+    if (isBili(url)) {
+      var em = biliEmbed(url);
+      if (em) { bd.innerHTML = '<iframe src="' + esc(em) + '" allowfullscreen></iframe>'; return; }
+    }
+    bd.innerHTML = '<video id="cuVidEl" controls playsinline preload="metadata"></video>';
+    var v = $('cuVidEl');
+    if (!v) return;
+    v.src = url;
+    try { v.play(); } catch (e) { }
+    v.addEventListener('error', function () {
+      bd.innerHTML = '<div class="tip">这个地址打不开（链接失效或防盗链）。换个直链试试，或选本机视频。</div>' + vidPickHtml();
+      vidBindPick();
+    }, false);
+  }
+  function openVid() {
+    var lay = $('cuVidLayer'), bd = $('cuVidBody');
+    if (!lay || !bd) return;
+    stopTTS();
+    lay.setAttribute('data-on', '1');
+    var url = vidFromCtx() || vidStored();
+    if (url) { vidPlay(url); return; }
+    bd.innerHTML = '<div class="tip">这道错题还没有真人讲解视频。<br>'
+      + '可以播本机录好的视频，或粘贴一个视频链接（B 站 / 直链 mp4 都行）。<br>'
+      + '选过的链接会按这道题记住，下次打开直接播。</div>' + vidPickHtml();
+    vidBindPick();
+  }
+  function closeVid() {
+    var lay = $('cuVidLayer'), bd = $('cuVidBody');
+    if (lay) lay.setAttribute('data-on', '0');
+    try {
+      var v = $('cuVidEl');
+      if (v) { v.pause(); v.removeAttribute('src'); try { v.load(); } catch (e) { } }
+    } catch (e) { }
+    try { if (VID.obj) { URL.revokeObjectURL(VID.obj); VID.obj = ''; } } catch (e) { }
+    if (bd) bd.innerHTML = '';
+  }
+
   /* ================= 7) 事件 ================= */
   function bind(m) {
     var on = function (id, ev, fn) { var e = $(id); if (e) e.addEventListener(ev, fn, false); };
@@ -155830,6 +155987,17 @@ boot();
       var dr = $('cuDrawer'); if (dr) dr.setAttribute('data-on', '1');
     });
     on('cuPlay', 'click', function () { if (ST.playing) stopTTS(); else speak(); });
+    /* 视频按钮：走 window 捕获委托。
+       元素级监听实测收不到事件（点击在到达目标前被别的捕获层吞掉），
+       捕获阶段最早拿得到，且不影响其它按钮。 */
+    W.addEventListener('click', function (ev) {
+      var t = ev.target;
+      while (t && t.nodeType === 1) {
+        if (t.id === 'cuVideo') { try { ev.preventDefault(); ev.stopPropagation(); } catch (e2) { } openVid(); return; }
+        if (t.id === 'cuVidClose') { try { ev.preventDefault(); ev.stopPropagation(); } catch (e2) { } closeVid(); return; }
+        t = t.parentNode;
+      }
+    }, true);
     /* 原题条：默认两行，点一下展开全文 / 收起 */
     on('cuQMore', 'click', function (ev) {
       if (ev && ev.stopPropagation) ev.stopPropagation();
@@ -156024,7 +156192,7 @@ boot();
      谁后加载都盖不掉；取不到上下文就原样放行，绝不会出现「点了没反应」。
      关闭灰度时本层完全不介入（第一行就 return）。 */
   var ENT_ID = { kbPlay: 1, kbVid: 1, c108TabL: 1, c108Play: 1, aivVidBtn: 1, c120Nine: 1, c110Badge: 1, c110AiBtn: 1, c110Tab: 1 };
-  var ENT_RE = /(视频讲解|视频解析|原版视频|查看讲解|真人视频|九项视频|板书逐步|交互讲题|AI\s*深讲)/;
+  var ENT_RE = /(视频讲解|视频解析|原版视频|查看讲解|九项视频|板书逐步|交互讲题|AI\s*深讲)/;
   var ENT_STAT = { hit: 0, miss: 0, last: '', list: [], skip: '' };
 
   function entTxt(el) {
@@ -156160,6 +156328,9 @@ boot();
     sources: function () { return (ST.sources || []).slice(); },
     setSource: setSource,
     viz: function (ctx, seg) { return VIZ.render(ctx, seg); },
+    reopenViz: function () { ST._viz = -1; try { syncActive(ST.i, true); } catch (e) { } },
+    vid: function () { try { openVid(); return 'ok'; } catch (e) { return 'err:' + (e && e.message); } },
+    vidClose: function () { try { closeVid(); } catch (e) { } },
     qa: {
       ask: function (q) { return qaAsk(q); },
       show: function () { if (!ST.open) build(); focusQA(); },
@@ -156462,7 +156633,7 @@ boot();
    关掉：CTB_GK11.off() */
 (function () {
   var W = window;
-  var VER = '10.245-gk11';
+  var VER = '10.249-gk11-aligned';
   if (W.CTB_GK11 && W.CTB_GK11.__on) return;
 
   function S(v) { return v == null ? '' : String(v); }
@@ -156512,27 +156683,134 @@ boot();
     return out;
   }
 
-  /* 考点匹配：全等 > 别名包含；同科优先 */
+  /* ---------- 考点匹配（10.249 重写）：全等 > 包含 > 相似度 > 章节聚合 ----------
+     旧版只认「全等 / 一方包含另一方」。错题知识点常写成组合名（如
+     「椭圆标准方程与直线与椭圆相交」），一条都对不上 → 第 11 项整项降级成
+     「未对齐考纲库」。新版加两级模糊匹配 + 同章节聚合兜底，保证九项都有实数。 */
+  function normName(s) {
+    return T(s).replace(/[（(][^）)]*[）)]/g, '')
+      .replace(/[【】\[\]「」『』《》]/g, '')
+      .replace(/[\s·．.、，,；;：:]+/g, '')
+      .replace(/与|和|及|以及|的/g, '')
+      .replace(/^(?:高中|初中|必修|选择性必修|选修)[一二三四五]?/g, '');
+  }
+  function bigrams(s) {
+    var a = [], i;
+    for (i = 0; i + 1 < s.length; i++) a.push(s.substr(i, 2));
+    return a;
+  }
+  function dice(a, b) {
+    var A = bigrams(a), B = bigrams(b), m = {}, i, hit = 0;
+    if (!A.length || !B.length) return 0;
+    for (i = 0; i < B.length; i++) m[B[i]] = (m[B[i]] || 0) + 1;
+    for (i = 0; i < A.length; i++) if (m[A[i]]) { hit++; m[A[i]]--; }
+    return (2 * hit) / (A.length + B.length);
+  }
+  function coverOf(a, b) {
+    var A = bigrams(a), i, hit = 0;
+    if (!A.length || !b) return 0;
+    for (i = 0; i < A.length; i++) if (b.indexOf(A[i]) >= 0) hit++;
+    return hit / A.length;
+  }
+  var _mpCache = {};
   function matchPoint(subj, name) {
-    var nm = T(name).replace(/[（(][^）)]*[）)]\s*$/, '');
-    if (nm.length < 2) return null;
-    var code = subjCode(subj), a = points(), best = null, bestSc = 0, i, p, t, sc, tie = false;
+    var nm0 = T(name).replace(/[（(][^）)]*[）)]\s*$/, '');
+    if (nm0.length < 2) return null;
+    var code = subjCode(subj), ck = code + '|' + nm0;
+    if (ck in _mpCache) return _mpCache[ck];
+    var nm = normName(nm0), a = points(), best = null, bs = 0, tie = false, i, p, t, tn, sc, hay;
     for (i = 0; i < a.length; i++) {
       p = a[i];
       if (!p) continue;
       if (code && p.subject && p.subject !== code) continue;
       t = T(p.title);
       if (!t) continue;
-      sc = 0;
-      if (t === nm) sc = 4;
-      else if (nm.length >= 3 && t.indexOf(nm) >= 0) sc = 3;
-      else if (t.length >= 4 && nm.indexOf(t) >= 0) sc = 2;
-      if (sc > bestSc) { bestSc = sc; best = p; tie = false; }
-      else if (sc && sc === bestSc) { tie = true; }
+      tn = normName(t);
+      if (tn === nm) sc = 1;
+      else if (nm.length >= 3 && tn.indexOf(nm) >= 0) sc = 0.9;
+      else if (tn.length >= 4 && nm.indexOf(tn) >= 0 && tn.length >= nm.length * 0.55) sc = 0.86;
+      else {
+        hay = tn + normName(p.exam_point) + normName(p.chapter);
+        sc = 0.55 * dice(nm, tn) + 0.45 * coverOf(nm, hay);
+        /* 首词是学科对象（椭圆 / 导数 / 化学平衡…）：候选条目里没有它，说明不是同一对象，降权 */
+        if (tn.indexOf(nm.slice(0, 2)) < 0) sc *= 0.55;
+        if (sc < 0.34) continue;
+      }
+      if (sc > bs + 0.015) { bs = sc; best = p; tie = false; }
+      else if (sc > bs - 0.015) tie = true;
     }
-    if (!best || bestSc < 2) return null;
-    best.__sc = bestSc; best.__tie = tie;
+    if (!best) { _mpCache[ck] = null; return null; }
+    best.__sc = bs; best.__tie = tie;
+    _mpCache[ck] = best;
     return best;
+  }
+
+  /* 章节聚合兜底：整条名对不上时，按题干关键词归到同科同一章，
+     用这一章在考纲库里的真实条目做聚合（不是编数字）。 */
+  var CH_HINT = [
+    [/椭圆|双曲线|抛物线|圆锥|焦点|离心率|准线/, /圆锥曲线/],
+    [/数列|等差|等比|递推|通项|前n项|求和/, /数列/],
+    [/导数|切线|极值|最值|单调性|导函数/, /导数/],
+    [/三角函数|正弦|余弦|正切|解三角形|弧度/, /三角/],
+    [/向量|空间直角|坐标法/, /向量/],
+    [/立体|棱锥|棱柱|棱台|二面角|线面|面面|体积|表面积/, /立体|空间/],
+    [/概率|统计|分布|期望|方差|回归|抽样|独立性/, /概率|统计/],
+    [/复数|虚数/, /复数/],
+    [/集合|充分|必要|逻辑|命题/, /集合|逻辑/],
+    [/电路|电流|电阻|电压|欧姆|电动势|电功率/, /电路|恒定电流/],
+    [/牛顿|加速度|动量|冲量|机械能|摩擦|斜面|圆周运动|万有引力|受力/, /力|运动|功|动量/],
+    [/电场|电势|电容|磁场|洛伦兹|安培|电磁感应|交流电/, /电场|磁场|电磁感应|交流/],
+    [/气体|热力学|分子|内能|压强/, /热|气体|分子/],
+    [/机械波|振动|折射|干涉|衍射|多普勒/, /机械波|光|振动/],
+    [/原子|核|衰变|光电效应|能级/, /原子|原子核|量子/],
+    [/化学平衡|反应速率|电离|水解|溶度积|pH/, /化学平衡|水溶液|电离/],
+    [/氧化还原|离子|电解质|物质的量|摩尔|溶液配制/, /氧化还原|离子|物质的量|溶液/],
+    [/有机|烃|醇|醛|酯|羧酸|官能团|同分异构/, /有机/],
+    [/元素|周期表|周期律|化学键|晶体|结构/, /元素|结构|晶体/],
+    [/实验|装置|制备|检验|分离|提纯|滴定/, /实验/],
+    [/细胞|光合|呼吸|ATP|细胞器|生物膜/, /细胞/],
+    [/遗传|基因|DNA|染色体|变异|育种|进化/, /遗传|变异|进化/],
+    [/稳态|神经|体液|免疫|植物激素/, /稳态|调节/],
+    [/种群|群落|生态系统|能量流动|物质循环/, /种群|群落|生态/],
+    [/文言|实词|虚词|断句|翻译|诗歌|鉴赏|默写/, /文言|诗歌|默写/],
+    [/现代文|论述|实用|文学|小说|散文|阅读/, /阅读|现代文/],
+    [/作文|写作|任务驱动|材料作文/, /写作|作文/],
+    [/语病|成语|衔接|标点|字音|字形|词语/, /语言|文字|词语/],
+    [/语法|完形|七选五|听力|词汇|时态|从句|应用文|读后续写/, /语法|阅读|写作|词汇/]
+  ];
+  function chapterOf(subj, name) {
+    var code = subjCode(subj), nm = normName(name), a = points(), i, ch = null;
+    for (i = 0; i < CH_HINT.length; i++) if (CH_HINT[i][0].test(nm)) { ch = CH_HINT[i][1]; break; }
+    if (!ch) return null;                 /* 关键词都没命中：不乱归章节，交给上层如实说明 */
+    var pool = [], pool2 = [], k;
+    for (i = 0; i < a.length; i++) {
+      var p = a[i];
+      if (!p || (code && p.subject && p.subject !== code)) continue;
+      var hay = T(p.chapter) + T(p.title) + T(p.exam_point);
+      if (!ch.test(hay)) continue;
+      pool2.push(p);
+      if (ch.test(T(p.chapter))) pool.push(p);   /* 章节字段本身命中 > 只是正文提到 */
+    }
+    if (!pool.length) pool = pool2;
+    if (!pool.length) return null;
+    var cnt = {}, ews = [], tops = [], levels = {}, ds = [];
+    for (k = 0; k < pool.length; k++) {
+      var q = pool[k], cc = T(q.chapter) || '（未标章节）';
+      cnt[cc] = (cnt[cc] || 0) + 1;
+      if (q.exam_weight && q.exam_weight.score) ews.push(T(q.exam_weight.score));
+      if (q.exam_weight && q.exam_weight.level) levels[T(q.exam_weight.level)] = (levels[T(q.exam_weight.level)] || 0) + 1;
+      if (tops.length < 8 && T(q.title) && tops.indexOf(T(q.title)) < 0) tops.push(T(q.title));
+      if (Number(q.difficulty)) ds.push(Number(q.difficulty));
+    }
+    var topCh = '', topN = 0, topLv = '', lvN = 0;
+    for (k in cnt) if (Object.prototype.hasOwnProperty.call(cnt, k) && cnt[k] > topN) { topN = cnt[k]; topCh = k; }
+    for (k in levels) if (Object.prototype.hasOwnProperty.call(levels, k) && levels[k] > lvN) { lvN = levels[k]; topLv = k; }
+    ds.sort(function (x, y) { return x - y; });
+    return {
+      __byChapter: 1, chapter: topCh, titles: tops, count: pool.length,
+      scores: ews, level: topLv,
+      difficulty: ds.length ? ds[Math.floor(ds.length / 2)] : 0
+    };
   }
 
   /* 只填空缺，不覆盖；教材知识点库已有的概念/公式/步骤一律优先 */
@@ -156563,7 +156841,7 @@ boot();
         if (!has(kp.exam_point) && p.exam_point) kp.exam_point = p.exam_point;
         if (!has(kp.chapter) && p.chapter) kp.chapter = p.chapter;
         var g = {
-          title: S(p.title), sc: p.__sc, tie: !!p.__tie,
+          title: S(p.title), sc: p.__sc, sim: Math.round((Number(p.__sc) || 0) * 100), tie: !!p.__tie,
           source: S(p.source), chapter: S(p.chapter), examPoint: S(p.exam_point),
           pre: arrTitles(p.preKnowledge), next: arrTitles(p.nextKnowledge)
         };
@@ -156571,6 +156849,20 @@ boot();
         catch (e2) { kp.gk11 = g; }
         kp.__gk11 = 1;
       } else {
+        /* 单条名字对不上 → 用同章节真实聚合补（10.249） */
+        try {
+          var chx = chapterOf(subj, name || kp.name || kp.title || '');
+          if (chx) {
+            kp.__gk11 = 1;
+            var gx = { title: '', sc: 0.3, sim: 30, tie: false, byCh: true,
+              chapter: chx.chapter, examPoint: '', source: '', pre: [], next: [] };
+            try { Object.defineProperty(kp, 'gk11', { value: gx, enumerable: false, configurable: true }); }
+            catch (e3) { kp.gk11 = gx; }
+            if (!has(kp.chapter)) kp.chapter = chx.chapter;
+            if (!has(kp.difficulty) && chx.difficulty) kp.difficulty = chx.difficulty;
+            return kp;
+          }
+        } catch (e4) { }
         kp.__gk11 = 1;
       }
     } catch (e) { }
@@ -156622,47 +156914,184 @@ boot();
     return s ? '【真题走向】' + s : '';
   }
 
-  /* ---------- 第 11 项正文：只写有据可查的 ---------- */
+  /* ---------- 第 11 项正文（10.249）：九项全部对齐考纲库实数 ----------
+     ① 考纲要求 ② 掌握层级 ③ 卷面占分 ④ 近年落点 ⑤ 章节归属
+     ⑥ 教材出处 ⑦ 时间预算 ⑧ 先修·后续 ⑨ 本点必错
+     数据只来自 KB650（1015 点）与本题记录；单条对不上就用同章节真实聚合，
+     不写「未对齐」——聚合仍然是考纲里的实数。 */
+  var ORD = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+  var LEVEL = {
+    1: '了解：能说出定义、认得标准形式，不要求变形',
+    2: '理解：知道成立条件，能直接套用公式',
+    3: '掌握：能独立完成两步以上的常规综合题',
+    4: '掌握并会迁移：多步推理，能处理含参与分类讨论',
+    5: '熟练掌握：能完成压轴问，含构造、证明与范围估计'
+  };
+  function splitPoints(s) {
+    var a = T(s).split(/[、，,；;。／/]+/), out = [], i, t;
+    for (i = 0; i < a.length; i++) {
+      t = T(a[i]).replace(/^(?:了解|理解|掌握|会|能|运用|熟练)/, '');
+      if (t && t.length <= 30 && out.indexOf(t) < 0) out.push(t);
+    }
+    return out.slice(0, 6);
+  }
+  function posBrief(pos) {
+    var s = T(pos);
+    if (!s) return null;
+    var qm = s.match(/(?:第\s*)?\d+(?:\s*[/／、,，]\s*\d+)+\s*题/) || s.match(/第\s*\d+\s*题/);
+    var q = qm ? qm[0].replace(/\s/g, '') : '';
+    var n = q ? (q.match(/\d+/g) || []).length : 0;   /* 只数题号，不把年份算进去 */
+    return { q: q, n: n };
+  }
+  /* 去掉年份/卷别/科目前缀：这些是来源串，讲稿净化会抹掉，先自己清成能读的样子 */
+  function cleanTxt(t) {
+    return T(t)
+      .replace(/(?:19|20)\d{2}\s*年?/g, '')
+      .replace(/[（(]?\s*(?:新)?高考|全国|新课标|学业水平/g, '')
+      .replace(/[ⅠⅡⅢⅣⅤIVX]+\s*卷/g, '')
+      .replace(/[甲乙丙]\s*卷/g, '')
+      .replace(/[（(]\s*(?:结构|卷面|样卷|参考|原卷)\s*[）)]/g, '').replace(/[（(]\s*[）)]/g, '')
+      .replace(/^[\s·．、,，:：;；]+|[\s·．、,，:：;；]+$/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  function anyTitles(v) {
+    if (!v) return [];
+    var a = (v instanceof Array) ? v : [v], out = [], i, s, t;
+    for (i = 0; i < a.length && out.length < 4; i++) {
+      s = S(a[i]);
+      t = idTitle(s);
+      if (!t) { t = T(s); if (t.length < 2 || t.length > 22) t = ''; }
+      if (t && out.indexOf(t) < 0) out.push(t);
+    }
+    return out;
+  }
   function seg11(ctx, kp) {
     ctx = ctx || {}; kp = kp || {};
-    var g = kp.gk11 || null;
     var code = subjCode(ctx.subject) || '';
-    var ew = kp.exam_weight || {};
-    var L = [];
+    var nm = T(ctx.kp) || T(kp.name) || T(kp.title) || '';
 
-    if (ew.score) L.push('【卷面占分】' + T(ew.score) + (ew.types ? '（' + T(ew.types) + '）' : ''));
-    if (ew.pos) L.push('【近年落点】' + T(ew.pos) + (ew.level ? '（' + T(ew.level) + '）' : ''));
+    /* 现场再匹配一次：不依赖 fillKp 是否被别的 hook 抢走 */
+    var p = null, ch = null;
+    try { p = matchPoint(ctx.subject, nm); } catch (e) { p = null; }
+    try { ch = chapterOf(ctx.subject, (p && T(p.title)) || nm); } catch (e) { ch = null; }
 
-    if (kp.difficulty) {
-      var d = Number(kp.difficulty);
-      if (d) L.push('【难度】' + d + ' / 5 · ' + (DIFF[d] || ''));
+    var ew = (p && p.exam_weight) || kp.exam_weight || {};
+    var ep = T((p && p.exam_point) || kp.exam_point);
+    var chapTxt = T((p && p.chapter) || kp.chapter) || T(ch && ch.chapter);
+    var dif = Number((p && p.difficulty) || kp.difficulty) || Number(ch && ch.difficulty) || 0;
+    var lvl = T(ew.level) || T(ch && ch.level);
+    var refs = (p && p.references) || kp.references;
+    var err = T((p && p.error) || kp.error);
+    var pre = anyTitles((p && p.preKnowledge) || kp.preKnowledge);
+    var next = anyTitles((p && p.nextKnowledge) || kp.nextKnowledge);
+    var L = [], i;
+
+    /* ① 考纲要求 */
+    var pts = splitPoints(ep);
+    if (pts.length === 1 && pts[0].length <= 4 && p && T(p.title) && T(p.title).indexOf(pts[0]) < 0) pts = [T(p.title)];
+    if (pts.length) {
+      var seg1 = [];
+      for (i = 0; i < pts.length; i++) seg1.push((ORD[i] || '') + pts[i]);
+      L.push('【考纲要求】' + seg1.join('　'));
+    } else if (ch && ch.titles.length) {
+      L.push('【考纲要求】本项归在「' + ch.chapter + '」，该章要求覆盖：'
+        + ch.titles.slice(0, 5).join('、') + '（考纲库共 ' + ch.count + ' 个考点）');
+    } else if (chapTxt) {
+      L.push('【考纲要求】本项归在「' + chapTxt + '」，按该章要求作答');
     }
-    if (g && (g.examPoint || g.chapter)) {
-      L.push((g.examPoint ? '【考纲条目】' + g.examPoint : '')
-        + (g.chapter ? '　【章节】' + g.chapter : ''));
+
+    /* ② 掌握层级 */
+    if (dif) L.push('【掌握层级】' + (LEVEL[dif] || LEVEL[3]) + '（难度档 ' + dif + ' / 5）');
+
+    /* ③ 卷面占分 */
+    if (T(ew.score)) {
+      var scTxt = cleanTxt(ew.score), tyTxt = cleanTxt(ew.types);
+      /* 题型串里的每一项都已经出现在分值串里，就不再重复 */
+      if (tyTxt) {
+        var tps = tyTxt.split(/[+＋、,，]/), anyNew = false, tk;
+        for (tk = 0; tk < tps.length; tk++) {
+          var tp = T(tps[tk]);
+          if (tp && scTxt.indexOf(tp) < 0) { anyNew = true; break; }
+        }
+        if (!anyNew) tyTxt = '';
+      }
+      if (!tyTxt) L.push('【卷面占分】' + scTxt);
+      else if (/[（(]/.test(tyTxt) || /[（(][^）)]*[）)]$/.test(scTxt)) {
+        L.push('【卷面占分】' + scTxt + ' · ' + tyTxt);          /* 两边都带括号，用间隔号，别套两层 */
+      } else {
+        L.push('【卷面占分】' + scTxt + '（' + tyTxt + '）');
+      }
+    } else if (ch && ch.scores.length) {
+      var nums = [], j, nn;
+      for (i = 0; i < ch.scores.length; i++) {
+        nn = T(ch.scores[i]).match(/\d+(?:\.\d+)?/g) || [];
+        for (j = 0; j < nn.length; j++) nums.push(Number(nn[j]));
+      }
+      if (nums.length) {
+        var lo = Math.min.apply(null, nums), hi = Math.max.apply(null, nums);
+        L.push('【卷面占分】该章约 ' + lo + '–' + hi + ' 分（本点未单列）');
+      }
     }
 
+    /* ④ 近年落点 */
+    var pb = posBrief(ew.pos);
+    if (pb && pb.n > 0) {
+      L.push('【近年落点】本卷 ' + pb.n + ' 处' + (pb.q ? '（' + pb.q + '）' : '')
+        + (lvl ? '（' + lvl + '）' : ''));
+    } else if (lvl) {
+      L.push('【近年落点】近年稳定出现（' + lvl + '）');
+    }
+
+    /* ⑤ 章节归属 */
+    if (chapTxt) L.push('【章节归属】' + chapTxt);
+
+    /* ⑥ 教材出处 */
+    var rl = (refs instanceof Array) ? refs : (refs ? [refs] : []), rok = [], ri;
+    for (i = 0; i < rl.length; i++) {
+      var rt = cleanTxt(rl[i]);
+      if (!rt || /高考|真题|题库|卷|模拟|联考/.test(rt)) continue;
+      if (rok.indexOf(rt) < 0) rok.push(rt);
+    }
+    if (rok.length) L.push('【教材出处】' + rok.join('、'));
+
+    /* ⑦ 时间预算 */
     var mm = mins(ew.score, code);
     if (mm) {
       var pp = PAPER[code] || PAPER.math;
-      L.push('【时间预算】约 ' + mm + ' 分钟（按 ' + pp.p + ' ≈ ' + pp.r + '分/分钟折算）；'
-        + '到点没算完先写结论和判据，步骤分比结果分稳。');
+      L.push('【时间预算】约 ' + mm + ' 分钟（按 ' + pp.p + ' 每分钟 ' + pp.r + ' 分折算）');
     }
 
-    var tr = trendLine(g && g.source);
-    if (tr) L.push(tr);
+    /* ⑧ 先修 / 后续 */
+    if (pre.length || next.length) {
+      L.push('【先修/后续】' + (pre.length ? '先修：' + pre.join('、') : '')
+        + (pre.length && next.length ? '　' : '')
+        + (next.length ? '后续：' + next.join('、') : ''));
+    } else if (ch && ch.titles.length > 1) {
+      var nb = [], ti0 = T(p && p.title);
+      for (i = 0; i < ch.titles.length && nb.length < 2; i++) if (ch.titles[i] !== ti0) nb.push(ch.titles[i]);
+      if (nb.length) L.push('【先修/后续】考纲库未标先修边；同章相邻考点：' + nb.join('、'));
+    }
 
-    if (g && g.pre.length) L.push('【先修考点】' + g.pre.join('、'));
-    if (g && g.next.length) L.push('【后续考点】' + g.next.join('、'));
+    /* ⑨ 本点必错 */
+    if (err) {
+      L.push('【本点必错】' + err);
+    } else {
+      var tip = T((p && p.tips) || kp.tips);
+      if (tip) L.push('【本点必错】按考纲口径，本点最常失分在条件：' + tip);
+    }
+
+    /* 对齐说明：不是全等命中时讲清按哪条对齐，数字才可信 */
+    if (p && p.__sc != null && p.__sc < 0.86) {
+      L.push('【对齐】按考纲库条目「' + T(p.title) + '」对齐（与本题知识点名为近似匹配）');
+    } else if (!p && ch) {
+      L.push('【对齐】按「' + ch.chapter + '」章节聚合对齐（考纲库无同名条目）');
+    }
 
     if (!L.length) {
-      var nm = T(ctx.kp) || '本点';
-      return '【未对齐考纲库】「' + nm + '」在 1015 点里没有同名或别名条目，本题记录也没带卷别年份，'
-        + '所以这一项既不给占分也不给位置——不编。把错题记录的知识点名改成考纲里的正式名称，重开这一页就是实数。';
-    }
-    if (g && g.sc < 4) {
-      L.push('【对齐考纲】' + g.title + '（与本题知识点名不是全等，按包含匹配'
-        + (g.tie ? '，同类条目不止一条，数字以这条为准' : '') + '）');
+      return '【考纲要求】「' + (nm || '本点') + '」这个写法在考纲库里没有对应条目，'
+        + '按任一相近条目硬套都会给出错的数据，所以这里不填。'
+        + '把知识点名改成考纲里的正式名称（例如「椭圆定义与标准方程」「导数的几何意义」），重开本页即按该条填满九项。';
     }
     return L.join('\n');
   }
@@ -156739,7 +157168,7 @@ boot();
           if (/高考要点/.test(S(r[i].t))) has11 = true;
         }
         if (has11) return r;
-        r.push({ i: '🎯', t: '高考要点（占分·难度·先修后续）', b: seg11(ctx, k) });
+        r.push({ i: '🎯', t: '高考要点（占分/落点/考纲条目/先修后续）', b: seg11(ctx, k) });
       } catch (e) { }
       return r;
     };
@@ -156780,4 +157209,812 @@ boot();
 
 </script>
 
+<script id="ctbV3">
+/* ==== 10.249 · 讲解舞台 3D 动态演示 ====
+   为什么要有这一层：原来的画面是按科目套的 SVG 示意图（函数抛物线 / 三角形 / 物块 / 烧瓶），
+   跟「这道题」的具体数据无关 —— 椭圆题也画抛物线、力学题也画同一块物块，
+   看起来像配图而不像演示。这里改成按题型 + 题面数字生成的真 3D 场景：
+   手写透视投影（Canvas 2D，无外部库、无网络），可手指旋转、自动缓慢自转，
+   并且随「当前讲到第几项」切换演示阶段（读题 → 关系 → 求解 → 结论）。
+   关掉：localStorage.ctb_viz_mode = '2d'（或在工具条点「平面图」）。
+*/
+(function () {
+  var W = window, D = document;
+  var VER = '10.249-v3';
+  if (W.__CTB_V3__ && W.__CTB_V3__.version === VER) return;
+
+  var host = null, cv = null, g2 = null, raf = 0, ro = null;
+  var scene = null, cam = null, mode = '3d', spin = true, last = 0, hold = 0;
+  var drag = null, pinch = null;
+  var LS = 'ctb_viz_mode';
+  try { if (localStorage.getItem(LS) === '2d') mode = '2d'; } catch (e) { }
+
+  function S(v) { return v == null ? '' : String(v); }
+  function nz(v, d) { var n = Number(v); return isFinite(n) && n !== 0 ? n : d; }
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  /* ---------------- 3D 基础 ---------------- */
+  function P3(x, y, z) { return { x: x, y: y, z: z }; }
+  function vadd(a, b) { return P3(a.x + b.x, a.y + b.y, a.z + b.z); }
+  function vsub(a, b) { return P3(a.x - b.x, a.y - b.y, a.z - b.z); }
+  function vmul(a, k) { return P3(a.x * k, a.y * k, a.z * k); }
+  function vlerp(a, b, t) { return P3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t); }
+  function vlen(a) { return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
+  function vnorm(a) { var l = vlen(a) || 1; return vmul(a, 1 / l); }
+  function vcross(a, b) {
+    return P3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+  }
+
+  function camNew() { return { yaw: -0.62, pitch: 0.58, zoom: 1.5, dist: 9.4, ty: 0 }; }
+
+  function proj(p, w, h) {
+    var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    var py = p.y - (cam.ty || 0);
+    var x1 = p.x * cy - p.z * sy;
+    var z1 = p.x * sy + p.z * cy;
+    var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    var y1 = py * cp - z1 * sp;
+    var z2 = py * sp + z1 * cp;
+    var zc = z2 + cam.dist / cam.zoom;
+    if (zc < 0.25) zc = 0.25;
+    var f = (Math.min(w, h) * 1.42) / zc;
+    return { x: w / 2 + x1 * f, y: h * 0.5 - y1 * f, z: zc, k: f };
+  }
+
+  /* ---------------- 图元 ---------------- */
+  var A1 = '#64c8ff', A2 = '#ffc857', A3 = '#5ee0a0', A4 = '#ff8f8f', A5 = '#c4a7ff', TXT = '#a9c4dc';
+
+  function Item(t, o) { o.t = t; return o; }
+  function seg(a, b, c, w, dash) { return Item('seg', { a: a, b: b, c: c || A1, w: w || 2, dash: dash || 0 }); }
+  function poly(pts, o) {
+    o = o || {};
+    return Item('poly', { pts: pts, fill: o.fill || 'rgba(100,200,255,.10)', stroke: o.stroke || A1, w: o.w || 1.8, close: o.close !== false });
+  }
+  function dot(p, c, r) { return Item('dot', { p: p, c: c || A2, r: r || 3.6 }); }
+  function glow(p, c, r) { return Item('glow', { p: p, c: c || A2, r: r || 9 }); }
+  function lbl(p, s, c, dx, dy, size) { return Item('lbl', { p: p, s: s, c: c || TXT, dx: dx || 0, dy: dy || 0, size: size || 12 }); }
+  function arrow(a, b, c, w) { return Item('arrow', { a: a, b: b, c: c || A2, w: w || 2.6 }); }
+
+  function circlePts(c, r, plane, n) {
+    var out = [], i, t, x, y, z;
+    n = n || 56;
+    for (i = 0; i <= n; i++) {
+      t = (i / n) * Math.PI * 2;
+      x = Math.cos(t) * r; y = Math.sin(t) * r;
+      if (plane === 'xz') out.push(P3(c.x + x, c.y, c.z + y));
+      else if (plane === 'yz') out.push(P3(c.x, c.y + y, c.z + x));
+      else out.push(P3(c.x + x, c.y + y, c.z));
+    }
+    return out;
+  }
+  function circle(c, r, plane, o) {
+    o = o || {};
+    return poly(circlePts(c, r, plane, o.n), { fill: o.fill || 'rgba(0,0,0,0)', stroke: o.stroke || A1, w: o.w || 2.2 });
+  }
+  function sphere(c, r, col, alpha) {
+    return Item('sphere', { c: c, r: r, col: col || A1, a: alpha == null ? 0.85 : alpha });
+  }
+
+  /* 网格平面（xz 平面，y=fixed） */
+  function planeGrid(y, size, step, col, alpha) {
+    var it = [], i;
+    size = size || 3; step = step || 0.6; col = col || 'rgba(120,170,215,';
+    alpha = alpha == null ? 0.22 : alpha;
+    for (i = -size; i <= size + 1e-6; i += step) {
+      it.push(seg(P3(i, y, -size), P3(i, y, size), col + (alpha * 0.55) + ')', 1));
+      it.push(seg(P3(-size, y, i), P3(size, y, i), col + (alpha * 0.55) + ')', 1));
+    }
+    return it;
+  }
+  function axisLine(from, to, col, name) {
+    var o = [seg(from, to, col || 'rgba(150,190,225,.65)', 1.6, 1)];
+    if (name) o.push(lbl(to, name, 'rgba(170,205,235,.85)', 6, 4, 11));
+    return o;
+  }
+
+  /* ---------------- 场景注册 ---------------- */
+  function pickNum(text, re, dflt) {
+    var m = S(text).match(re);
+    if (!m) return dflt;
+    var v = Number(S(m[1]).replace(/[^\d.]/g, ''));
+    return isFinite(v) && v > 0 ? v : dflt;
+  }
+  function qText(ctx, seg1) {
+    return S(ctx && (ctx.question || ctx.stem)) + ' ' + S(seg1 && seg1.tag) + ' ' + S(seg1 && seg1.body).slice(0, 260);
+  }
+
+  /* ① 圆锥曲线 × 直线：椭圆躺在水平面，直线来回扫，交点实时算并标出判别式三种状态 */
+  function sceneConic(ctx, sg) {
+    var txt = qText(ctx, sg);
+    var a2 = pickNum(txt, /x\s*(?:²|\^?2)\s*\/\s*(\d+(?:\.\d+)?)/i, 4);
+    var b2 = pickNum(txt, /y\s*(?:²|\^?2)\s*\/\s*(\d+(?:\.\d+)?)/i, 3);
+    var a = Math.sqrt(a2), b = Math.sqrt(b2);
+    var k0 = 2.15 / Math.max(a, b);
+    a *= k0; b *= k0;
+    var m0 = b * 0.62;
+    var items = [], t0 = 0;
+    return {
+      name: '椭圆 × 直线 · 交点扫描',
+      sub: 'a = ' + Math.sqrt(a2).toFixed(2) + '　b = ' + Math.sqrt(b2).toFixed(2) + '　直线 y = kx + ' + m0.toFixed(2),
+      build: function (t, idx, total) {
+        var items = [], i;
+        items = items.concat(planeGrid(0, 2.6, 0.65));
+        items = items.concat(axisLine(P3(-2.9, 0, 0), P3(2.9, 0, 0), 'rgba(150,190,225,.6)', 'x'));
+        items = items.concat(axisLine(P3(0, 0, -2.6), P3(0, 0, 2.6), 'rgba(150,190,225,.6)', 'z'));
+
+        /* 椭圆：x²/a² + z²/b² = 1（投影到水平面，屏幕上看是"躺着的圆"） */
+        var ep = [], n = 84;
+        for (i = 0; i <= n; i++) {
+          var th = (i / n) * Math.PI * 2;
+          ep.push(P3(a * Math.cos(th), 0, b * Math.sin(th)));
+        }
+        items.push(poly(ep, { fill: 'rgba(100,200,255,.07)', stroke: A1, w: 2.6 }));
+
+        /* 直线扫描：k 往返变化；m 固定，于是能依次出现 Δ>0 / Δ=0 / Δ<0 */
+        var ph = (t * 0.28) % 2, kk;
+        kk = ph < 1 ? (ph * 2 - 1) * 1.75 : (3 - ph * 2) * 1.75;
+
+        var A = b * b + a * a * kk * kk;          /* 用平面坐标 (x,z)：z = kx + m */
+        var B = 2 * a * a * kk * m0;
+        var C = a * a * (m0 * m0 - b * b);
+        var D = B * B - 4 * A * C;
+        var x1, x2, pts = [];
+        if (D > 1e-9) {
+          x1 = (-B + Math.sqrt(D)) / (2 * A);
+          x2 = (-B - Math.sqrt(D)) / (2 * A);
+          pts.push(P3(x1, 0, kk * x1 + m0), P3(x2, 0, kk * x2 + m0));
+        } else if (D > -1e-9) {
+          x1 = -B / (2 * A);
+          pts.push(P3(x1, 0, kk * x1 + m0));
+        }
+        /* 直线本体（画长一点，超出的部分被椭圆外框自然截断视觉） */
+        var L = 3.2;
+        var pA = P3(-L, 0, -kk * L + m0), pB = P3(L, 0, kk * L + m0);
+        items.push(seg(pA, pB, A2, 2.6, 1));
+        items.push(lbl(vlerp(pA, pB, 0.93), 'l', A2, 4, -6, 12));
+
+        /* 交点：发光点 + 竖线（把"解"从平面里挑出来，3D 才看得出位置） */
+        for (i = 0; i < pts.length; i++) {
+          items.push(glow(pts[i], A3, 11));
+          items.push(dot(pts[i], '#eafff4', 4.2));
+          items.push(seg(P3(pts[i].x, 0, pts[i].z), P3(pts[i].x, 0.62, pts[i].z), A3, 1.4, 1));
+          items.push(lbl(P3(pts[i].x, 0.72, pts[i].z), i === 0 ? 'A' : 'B', A3, 0, -4, 12));
+          items.push(seg(P3(pts[i].x, 0, pts[i].z), P3(pts[i].x, 0, 0), 'rgba(94,224,160,.45)', 1, 1));
+        }
+
+        /* 判别式状态条：Δ>0 / =0 / <0 直接写在画面里 */
+        var stTxt = D > 1e-9 ? 'Δ > 0　两交点（相交）' : (D > -1e-9 ? 'Δ = 0　一个交点（相切）' : 'Δ < 0　无交点（相离）');
+        var stCol = D > 1e-9 ? A3 : (D > -1e-9 ? A2 : A4);
+        items.push(Item('cap', { s: stTxt, c: stCol }));
+        items.push(Item('cap2', {
+          s: 'k = ' + kk.toFixed(2) + '　交点 ' + pts.length + ' 个'
+            + (pts.length ? '　判别式正负决定交点数' : '　联立无实根')
+        }));
+        return items;
+      }
+    };
+  }
+
+  /* ② 立体几何：四棱锥 + 高 + 体对角线 + 水平截面从底扫到顶 */
+  function sceneSolid(ctx, sg) {
+    var txt = qText(ctx, sg);
+    var isPrism = /棱柱|正方体|长方体|棱台/.test(txt);
+    var h = 2.15, r = 1.25;
+    var A = P3(-r, 0, -r), B = P3(r, 0, -r), C = P3(r, 0, r), Dp = P3(-r, 0, r), P = P3(0, h, 0);
+    return {
+      name: isPrism ? '立体几何 · 棱柱与截面' : '立体几何 · 四棱锥与截面',
+      cam: { dist: 10.4, pitch: 0.42, zoom: 1.45, ty: 1.02 },
+      sub: '底面边长 ' + (2 * r).toFixed(1) + '　高 ' + h.toFixed(2) + '　截面随讲解下移',
+      build: function (t, idx, total) {
+        var items = [], i;
+        items = items.concat(planeGrid(0, 2.3, 0.7, 'rgba(120,170,215,', 0.16));
+        /* 底面 */
+        items.push(poly([A, B, C, Dp], { fill: 'rgba(100,200,255,.10)', stroke: A1, w: 2.2 }));
+        /* 侧棱 */
+        var tops = isPrism
+          ? [P3(-r, h, -r), P3(r, h, -r), P3(r, h, r), P3(-r, h, r)]
+          : [P, P, P, P];
+        var base = [A, B, C, Dp];
+        for (i = 0; i < 4; i++) items.push(seg(base[i], tops[i], A1, 2.2));
+        if (isPrism) {
+          items.push(poly([tops[0], tops[1], tops[2], tops[3]], { fill: 'rgba(100,200,255,.10)', stroke: A1, w: 2.2 }));
+        } else {
+          items.push(lbl(P, 'P', A2, 0, -8, 13));
+        }
+        /* 高 PO（虚线）+ 体对角线 */
+        var O = P3(0, 0, 0);
+        items.push(seg(O, isPrism ? P3(0, h, 0) : P, A2, 1.8, 1));
+        items.push(lbl(vlerp(O, P3(0, h, 0), 0.56), 'h', A2, 8, 0, 12));
+        items.push(dot(O, '#dff1ff', 2.8));
+        items.push(lbl(O, 'O', TXT, -12, 10, 11));
+        items.push(seg(A, C, 'rgba(196,167,255,.75)', 1.4, 1));
+        items.push(seg(B, Dp, 'rgba(196,167,255,.75)', 1.4, 1));
+
+        /* 水平截面：从底扫到顶，与四条侧棱求交（相似三角形缩放） */
+        var tt = (t * 0.22) % 1;
+        var hy = 0.12 + tt * (h - 0.3);
+        var s = 1 - hy / h;
+        if (!isPrism) s = 1 - hy / h; else s = 1;
+        var sec = [];
+        for (i = 0; i < 4; i++) sec.push(vlerp(base[i], tops[i], hy / h));
+        items.push(poly(sec, { fill: 'rgba(94,224,160,.16)', stroke: A3, w: 2 }));
+        items.push(lbl(sec[1], '截面', A3, 30, 10, 11));
+        /* 截面四顶点 */
+        for (i = 0; i < 4; i++) items.push(dot(sec[i], '#d8ffee', 2.6));
+
+        /* 顶点标签 */
+        items.push(lbl(A, 'A', TXT, -14, 8, 12));
+        items.push(lbl(B, 'B', TXT, 6, 8, 12));
+        items.push(lbl(C, 'C', TXT, 6, 8, 12));
+        items.push(lbl(Dp, 'D', TXT, -14, 8, 12));
+        items.push(Item('cap', { s: '截面到顶 ' + (hy / h * 100).toFixed(0) + '%　（讲解到"截面/二面角"这一项时看这里的形状变化）', c: A3 }));
+        return items;
+      }
+    };
+  }
+
+  /* ③ 函数与导数：曲线 + 动点 + 切线 + 到坐标轴的投影 */
+  /* 从题面解析函数式：支持 ax³+bx、ax²+bx+c、ax+b；解析不到才退回示意抛物线。
+     这一步是「图与题契合」的关键——题面写 x³-3x 就必须画 x³-3x，不能画成抛物线。 */
+  function funcOf(txt) {
+    var raw0 = S(txt).replace(/\s/g, '').replace(/[−–]/g, '-');
+    /* 只在「f(x)=…」这一段里解析，否则会把标准答案里的 (-1,1) 当成常数项 */
+    var mf = raw0.match(/f\(x\)=([^，,。；;求]{1,40})/);
+    var s = mf ? mf[1] : raw0.slice(0, 48);
+    function coef(m, dflt) {
+      if (!m) return 0;
+      var t = S(m[1]);
+      if (t === '+' || t === '') return dflt;
+      if (t === '-') return -dflt;
+      var sg = t.charAt(0) === '-' ? -1 : 1, body = t.replace(/^[+\-]/, '');
+      return body === '' ? sg * dflt : sg * Number(body);
+    }
+    var m3 = s.match(/([+\-]?(?:\d+(?:\.\d+)?)?)x(?:³|\^3)/);
+    var m2 = s.match(/([+\-](?:\d+(?:\.\d+)?)?)x(?:²|\^2)/);
+    var m1 = s.match(/([+\-](?:\d+(?:\.\d+)?)?)x(?![²³\^0-9a-zA-Z])/);
+    var a3 = m3 ? coef(m3, 1) : 0;
+    var a2 = m2 ? coef(m2, 1) : 0;
+    var a1 = m1 ? coef(m1, 1) : 0;
+    var mc = s.match(/([+\-]\d+(?:\.\d+)?)(?![x^0-9])/);
+    var a0 = mc ? Number(mc[1]) : 0;
+    if (!a3 && !a2 && !a1) { a2 = -0.42; a0 = -0.55; }
+    function raw(x) { return a3 * x * x * x + a2 * x * x + a1 * x + a0; }
+    function dRaw(x) { return 3 * a3 * x * x + 2 * a2 * x + a1; }
+    /* 值域归一：保证曲线在视野内（x∈[-2.1,2.1]，|y| ≤ 1.9） */
+    var mx = 0.01, i, v;
+    for (i = 0; i <= 40; i++) { v = Math.abs(raw(-2.1 + (4.2 * i) / 40)); if (v > mx) mx = v; }
+    var k = 1.35 / mx;
+    if (k > 1.15) k = 1.15;
+    function fmt(c, pow) {
+      if (!c) return '';
+      var sg = c > 0 ? ' + ' : ' − ', ab = Math.abs(c);
+      var num = (Math.abs(ab - 1) < 1e-9 && pow) ? '' : String(Math.round(ab * 100) / 100);
+      return sg + num + (pow || '');
+    }
+    var expr = (a3 === 0 && a2 === 0 && a1 === 0) ? 'y = 0'
+      : ((a3 ? ((a3 === 1 ? 'x³' : (a3 === -1 ? '−x³' : a3 + 'x³'))) : '')
+        + (a2 ? fmt(a2, 'x²') : '')
+        + (a1 ? fmt(a1, 'x') : '')
+        + (a0 ? fmt(a0, '') : '')) || 'y = 0';
+    return {
+      f: function (x) { return raw(x) * k; },
+      d: function (x) { return dRaw(x) * k; },
+      expr: expr.replace(/^\+ /, '')
+    };
+  }
+  function sceneCurve(ctx, sg) {
+    var txt = qText(ctx, sg);
+    var fn = funcOf(txt);
+    var f = fn.f, df = fn.d;
+    return {
+      name: '函数与导数 · 动点切线',
+      cam: { dist: 11.4, pitch: 0.44, zoom: 1.35, ty: 0.05 },
+      sub: 'f(x) = ' + fn.expr + '　切线斜率 = f′(x)',
+      build: function (t, idx, total) {
+        var items = [], i, N = 60;
+        items = items.concat(planeGrid(0, 2.3, 0.7, 'rgba(120,170,215,', 0.14));
+        items = items.concat(axisLine(P3(-2.45, 0, 0), P3(2.45, 0, 0), 'rgba(150,190,225,.6)', 'x'));
+        items = items.concat(axisLine(P3(0, -1.3, 0), P3(0, 2.0, 0), 'rgba(150,190,225,.6)', 'y'));
+        var pts = [];
+        for (i = 0; i <= N; i++) {
+          var x = -2.1 + (4.2 * i) / N;
+          pts.push(P3(x, f(x), 0));
+        }
+        items.push(poly(pts, { fill: 'rgba(0,0,0,0)', stroke: A1, w: 2.8 }));
+
+        /* 动点：匀速往返 */
+        var ph = (t * 0.26) % 2;
+        var x0 = ph < 1 ? -1.8 + ph * 3.6 : 1.8 - (ph - 1) * 3.6;
+        var y0 = f(x0), kx = df(x0);
+        var p0 = P3(x0, y0, 0);
+        items.push(glow(p0, A2, 10));
+        items.push(dot(p0, '#fff6e0', 4.2));
+        /* 切线 */
+        var dx = 1.0, tan = [P3(x0 - dx, y0 - kx * dx, 0), P3(x0 + dx, y0 + kx * dx, 0)];
+        items.push(seg(tan[0], tan[1], A2, 2.4));
+        items.push(lbl(tan[1], '切线 k=' + kx.toFixed(2), A2, x0 > 0.4 ? -46 : 8, -6, 11));
+        /* 到坐标轴的投影 + 数值 */
+        items.push(seg(p0, P3(x0, 0, 0), 'rgba(94,224,160,.55)', 1.2, 1));
+        items.push(seg(p0, P3(0, y0, 0), 'rgba(94,224,160,.35)', 1.2, 1));
+        items.push(dot(P3(x0, 0, 0), A3, 2.6));
+        items.push(lbl(P3(x0, 0, 0), 'x=' + x0.toFixed(2), A3, 0, 14, 11));
+        items.push(lbl(P3(0, y0, 0), 'f(x)=' + y0.toFixed(2), A3, -4, -6, 11));
+        items.push(Item('cap', {
+          s: kx > 0.02 ? 'f′(x) > 0 → 此处递增' : (kx < -0.02 ? 'f′(x) < 0 → 此处递减' : 'f′(x) = 0 → 此处为极值嫌疑点'),
+          c: kx > 0.02 ? A3 : (kx < -0.02 ? A4 : A2)
+        }));
+        return items;
+      }
+    };
+  }
+
+  /* ④ 力学：立体斜面 + 物块下滑 + 三力矢量 */
+  function sceneMech(ctx, sg) {
+    var txt = qText(ctx, sg);
+    var deg = 30;
+    var m = txt.match(/(\d{2}(?:\.\d+)?)\s*(?:°|度)/);
+    if (m && Number(m[1]) >= 10 && Number(m[1]) <= 70) deg = Number(m[1]);
+    var th = deg * Math.PI / 180;
+    var L = 2.5, Hh = L * Math.sin(th), Wb = L * Math.cos(th);
+    return {
+      name: '力学 · 斜面与受力',
+      cam: { dist: 10.4, pitch: 0.14, yaw: -0.30, zoom: 1.5, ty: 0.62 },
+      sub: '倾角 ' + deg + '°　物块沿斜面下滑　重力 mg / 支持力 N / 摩擦 f',
+      build: function (t, idx, total) {
+        var items = [], i;
+        items.push(seg(P3(-2.5, 0, 0), P3(2.5, 0, 0), 'rgba(150,190,225,.35)', 1));
+        /* 斜面三角柱 */
+        var TH = 0.8;
+        var p1 = P3(-Wb / 2, 0, -TH), p2 = P3(Wb / 2, 0, -TH), p3 = P3(Wb / 2, Hh, -TH);
+        var p4 = P3(-Wb / 2, 0, TH), p5 = P3(Wb / 2, 0, TH), p6 = P3(Wb / 2, Hh, TH);
+        items.push(poly([p1, p2, p3], { fill: 'rgba(100,200,255,.10)', stroke: A1, w: 1.8 }));
+        items.push(poly([p4, p5, p6], { fill: 'rgba(100,200,255,.06)', stroke: 'rgba(100,200,255,.55)', w: 1.4 }));
+        /* 受力面（a 到 b 的斜面）：填亮一点，物块就压在这上面 */
+        items.push(poly([p1, p4, p6, p3], { fill: 'rgba(100,200,255,.22)', stroke: A1, w: 2.2 }));
+        items.push(poly([p1, p2, p5, p4], { fill: 'rgba(120,180,240,.10)', stroke: 'rgba(100,200,255,.6)', w: 1.4 }));
+        items.push(poly([p2, p3, p6, p5], { fill: 'rgba(120,180,240,.08)', stroke: 'rgba(100,200,255,.45)', w: 1.2 }));
+
+        /* 倾角标注 */
+        items.push(Item('ang', { c: P3(-Wb / 2, 0, -TH), r: 0.52, a0: 0, a1: -th, col: A2, txt: deg + '°' }));
+
+        /* 物块沿斜面下滑（循环） */
+        var ph = (t * 0.30) % 1;
+        var sPos = 0.12 + ph * 0.74;
+        var bx = -Wb / 2 + Wb * sPos, by = Hh * sPos, sz = 0;
+        var blk = P3(bx, by, sz);
+        var half = 0.40;
+        /* 物块：以斜面法向/切向为轴的小立方体（简化成"斜面上的方块"） */
+        var nx = -Math.sin(th), ny = Math.cos(th);  /* 法向：垂直斜面向左上（支持力方向） */
+        var tx = Math.cos(th), ty = -Math.sin(th);  /* 沿斜面向下 */
+        var c1 = P3(blk.x + nx * half, blk.y + ny * half, blk.z - half);
+        var c2 = P3(blk.x + nx * half, blk.y + ny * half, blk.z + half);
+        var t1 = P3(c1.x + tx * half * 2, c1.y + ty * half * 2, c1.z);
+        var t2 = P3(c2.x + tx * half * 2, c2.y + ty * half * 2, c2.z);
+        items.push(poly([c1, c2, t2, t1], { fill: 'rgba(255,200,87,.28)', stroke: A2, w: 2 }));
+        items.push(dot(blk, '#fff3d6', 3));
+
+        /* 三力：重力竖直向下、支持力沿法向、摩擦沿斜面向上 */
+        var ctr = P3(blk.x + nx * half, blk.y + ny * half, blk.z);
+        items.push(arrow(ctr, P3(ctr.x, ctr.y - 1.25, ctr.z), A3, 3));
+        items.push(lbl(P3(ctr.x, ctr.y - 1.25, ctr.z), 'mg', A3, 18, 8, 12));
+        items.push(arrow(ctr, P3(ctr.x + nx * 1.28, ctr.y + ny * 1.28, ctr.z), A5, 2.8));
+        items.push(lbl(P3(ctr.x + nx * 1.28, ctr.y + ny * 1.28, ctr.z), 'N', A5, 12, -8, 12));
+        items.push(arrow(ctr, P3(ctr.x - tx * 1.18, ctr.y - ty * 1.18, ctr.z), A4, 2.6));
+        items.push(lbl(P3(ctr.x - tx * 1.18, ctr.y - ty * 1.18, ctr.z), 'f', A4, -14, 12, 12));
+
+        items.push(Item('cap', { s: '沿斜面方向：mg sin' + deg + '° − f = ma　垂直方向：N = mg cos' + deg + '°', c: A2 }));
+        return items;
+      }
+    };
+  }
+
+  /* ⑤ 化学/生物：晶胞（球堆）或细胞（球 + 细胞器） */
+  function sceneLattice(ctx, sg) {
+    var txt = qText(ctx, sg);
+    var isCell = /细胞|光合|呼吸|叶绿体|线粒体|膜|酶/.test(txt);
+    var isAtom = /原子|轨道|电子云|能级/.test(txt);
+    return {
+      name: isCell ? '细胞 · 结构动态' : (isAtom ? '原子 · 电子云轨道' : '晶体 · 晶胞结构'),
+      cam: { dist: 9.8, pitch: 0.4, zoom: 1.45, ty: 0.9 },
+      sub: isCell ? '细胞膜 + 细胞器（随讲解轻微脉动）' : (isAtom ? '原子核 + 电子轨道' : '立方晶胞 · 顶点与体心'),
+      build: function (t, idx, total) {
+        var items = [], i, j, k;
+        if (isCell) {
+          var pulse = 1 + Math.sin(t * 1.6) * 0.045;
+          items.push(sphere(P3(0, 0.9, 0), 1.5 * pulse, 'rgba(94,224,160,.16)', 0.9));
+          items.push(circle(P3(0, 0.9, 0), 1.5 * pulse, 'xz', { stroke: A3, w: 2, fill: 'rgba(94,224,160,.05)', n: 64 }));
+          /* 细胞器 */
+          items.push(sphere(P3(-0.45, 1.15, 0.2), 0.34, 'rgba(100,200,255,.55)'));
+          items.push(lbl(P3(-0.45, 1.5, 0.2), '核', '#dff1ff', -4, -4, 11));
+          items.push(sphere(P3(0.5, 0.62, -0.3), 0.22, 'rgba(255,200,87,.5)'));
+          items.push(sphere(P3(0.35, 1.3, 0.45), 0.18, 'rgba(196,167,255,.5)'));
+          for (i = 0; i < 6; i++) {
+            var an = t * 0.7 + i * 1.05;
+            items.push(sphere(P3(Math.cos(an) * 0.95, 0.9 + Math.sin(an * 1.7) * 0.55, Math.sin(an) * 0.95), 0.085, 'rgba(200,235,255,.6)'));
+          }
+        } else if (isAtom) {
+          items.push(sphere(P3(0, 0.9, 0), 0.30, 'rgba(255,143,143,.85)'));
+          items.push(lbl(P3(0, 0.9, 0), '原子核', '#ffd9d9', 10, -10, 11));
+          for (i = 0; i < 3; i++) {
+            var rr = 0.85 + i * 0.35;
+            items.push(circle(P3(0, 0.9, 0), rr, i === 1 ? 'yz' : 'xz', { stroke: 'rgba(100,200,255,.45)', w: 1.3, n: 56 }));
+            var ang = t * (1.2 - i * 0.25) + i * 2.1;
+            var ex = Math.cos(ang) * rr, ez = Math.sin(ang) * rr;
+            var ep = i === 1 ? P3(0, 0.9 + Math.sin(ang) * rr, Math.cos(ang) * rr) : P3(ex, 0.9, ez);
+            items.push(glow(ep, A1, 8));
+            items.push(dot(ep, '#eaf7ff', 3));
+          }
+        } else {
+          /* 立方晶胞：8 顶点 + 面心 + 体心 */
+          var R = 0.95, cy = 0.95;
+          var vs = [];
+          for (i = -1; i <= 1; i += 2) for (j = -1; j <= 1; j += 2) for (k = -1; k <= 1; k += 2) vs.push(P3(i * R, cy + j * R, k * R));
+          var e = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]];
+          for (i = 0; i < e.length; i++) items.push(seg(vs[e[i][0]], vs[e[i][1]], 'rgba(120,170,215,.55)', 1.3));
+          for (i = 0; i < vs.length; i++) items.push(sphere(vs[i], 0.17, 'rgba(100,200,255,.7)'));
+          items.push(sphere(P3(0, cy, 0), 0.19, 'rgba(255,200,87,.85)'));
+          items.push(lbl(P3(0, cy, 0), '体心', '#ffe9b8', 8, -8, 11));
+          /* 一个面心随讲解闪 */
+          var fp = P3(0, cy + R, 0);
+          items.push(sphere(fp, 0.16, 'rgba(94,224,160,' + (0.45 + Math.sin(t * 2) * 0.25) + ')'));
+          items.push(lbl(P3(0, cy + R + 0.22, 0), '面心', A3, 6, -6, 11));
+        }
+        items.push(Item('cap', { s: isCell ? '结构 → 功能：位置决定作用' : (isAtom ? '能级越高，轨道半径越大' : '顶点 1/8、面心 1/2、体心 1 个原子'), c: A3 }));
+        return items;
+      }
+    };
+  }
+
+  /* ⑥ 兜底：3D 解题链路（四节点沿轴排布，镜头缓慢绕行） */
+  function sceneFrame(ctx, sg) {
+    var labs = ['读题', '关系', '推演', '结论'];
+    return {
+      name: '解题链路 · 3D',
+      cam: { dist: 10.2, pitch: 0.42, zoom: 1.4, ty: 0.9 },
+      sub: '按本题讲解顺序推进',
+      build: function (t, idx, total) {
+        var items = [], i;
+        items = items.concat(planeGrid(0, 2.3, 0.8, 'rgba(120,170,215,', 0.10));
+        var cur = total ? Math.min(3, Math.floor(idx / Math.max(1, total) * 4)) : 0;
+        for (i = 0; i < 4; i++) {
+          var x = -2.1 + i * 1.4;
+          var y = 0.9 + Math.sin(t * 1.1 + i * 0.8) * 0.12;
+          var on = i <= cur;
+          items.push(poly(circlePts(P3(x, y, 0), 0.34, 'xz', 32), {
+            fill: on ? 'rgba(94,224,160,.22)' : 'rgba(100,200,255,.08)',
+            stroke: on ? A3 : 'rgba(120,170,215,.6)', w: 2
+          }));
+          items.push(lbl(P3(x, y + 0.02, 0), labs[i], on ? '#eafff4' : TXT, 0, 4, 13));
+          if (i < 3) items.push(arrow(P3(x + 0.4, y, 0), P3(x + 0.98, y, 0), i < cur ? A3 : 'rgba(120,170,215,.6)', 2));
+        }
+        items.push(Item('cap', { s: '当前：' + labs[cur] + '　（' + (cur + 1) + ' / 4）', c: A3 }));
+        return items;
+      }
+    };
+  }
+
+  /* ---------------- 选题 ---------------- */
+  var RULES = [
+    [/(细胞|细胞器|光合作用|呼吸作用|叶绿体|线粒体|ATP|酶|膜)/, sceneLattice],
+    [/(晶胞|晶体|面心|体心|配位数|分子构型|原子轨道|电子云|能级)/, sceneLattice],
+    [/(化学平衡|离子|氧化还原|摩尔|物质的量|溶液|电解质|pH|水解|沉淀|滴定|有机|官能团)/, sceneLattice],
+    [/(电路|电流|电阻|电压|欧姆|电动势|电容器|电磁感应|磁场|洛伦兹|安培)/, sceneMech],
+    [/(受力|摩擦|斜面|牛顿|加速度|动量|机械能|平衡条件|重力|弹力|向心力|功|功率)/, sceneMech],
+    [/(折射|反射|透镜|全反射|干涉|衍射|光路|光线|入射角|焦距)/, sceneCurve],
+    [/(椭圆|双曲线|抛物线|圆锥曲线|焦点|离心率|直线与圆|切线|弦长)/, sceneConic],
+    [/(立体|棱锥|棱柱|棱台|正方体|长方体|二面角|线面角|体积|表面积|截面)/, sceneSolid],
+    [/(函数|导数|单调|极值|最值|抛物线|数列|三角函数|方程|不等式|解析式|定义域)/, sceneCurve]
+  ];
+  function pickScene(ctx, sg, idx, total) {
+    var hay = S(ctx && (ctx.subject || ctx.subj)) + ' ' + S(ctx && (ctx.question || ctx.stem)).slice(0, 400)
+      + ' ' + S(sg && sg.tag) + ' ' + S(sg && sg.body).slice(0, 220);
+    for (var i = 0; i < RULES.length; i++) if (RULES[i][0].test(hay)) return RULES[i][1](ctx, sg);
+    return sceneFrame(ctx, sg);
+  }
+
+  /* ---------------- 绘制 ---------------- */
+  function resize() {
+    if (!cv) return;
+    var w = host.clientWidth || 320, h = host.clientHeight || 200;
+    var dpr = Math.min(2, W.devicePixelRatio || 1);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      cv.style.width = w + 'px'; cv.style.height = h + 'px';
+      g2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    return { w: w, h: h };
+  }
+
+  function drawItems(items, w, h) {
+    var i, it, list = [];
+    for (i = 0; i < items.length; i++) {
+      it = items[i];
+      if (it.t === 'cap' || it.t === 'cap2' || it.t === 'ang') continue;
+      var pts = [];
+      if (it.t === 'seg' || it.t === 'arrow') pts = [it.a, it.b];
+      else if (it.t === 'poly') pts = it.pts;
+      else if (it.t === 'sphere') pts = [it.c];          /* sphere 的 c 是球心坐标 */
+      else if (it.t === 'dot' || it.t === 'glow' || it.t === 'lbl') pts = [it.p];  /* 这两个的 c 是颜色，别当坐标 */
+      var sp = [], zs = 0, j;
+      for (j = 0; j < pts.length; j++) { sp.push(proj(pts[j], w, h)); zs += sp[j].z; }
+      it._sp = sp; it._z = zs / (sp.length || 1);
+      list.push(it);
+    }
+    list.sort(function (a, b) { return b._z - a._z; });
+
+    for (i = 0; i < list.length; i++) {
+      it = list[i];
+      var sp2 = it._sp;
+      if (it.t === 'seg') {
+        g2.save();
+        g2.strokeStyle = it.c;
+        g2.lineWidth = it.w;
+        if (it.dash) g2.setLineDash([5, 5]);
+        g2.beginPath(); g2.moveTo(sp2[0].x, sp2[0].y); g2.lineTo(sp2[1].x, sp2[1].y); g2.stroke();
+        g2.restore();
+      } else if (it.t === 'poly') {
+        g2.save();
+        g2.beginPath();
+        for (var k = 0; k < sp2.length; k++) { if (k) g2.lineTo(sp2[k].x, sp2[k].y); else g2.moveTo(sp2[k].x, sp2[k].y); }
+        if (it.close) g2.closePath();
+        if (it.fill) { g2.fillStyle = it.fill; g2.fill(); }
+        if (it.stroke) { g2.strokeStyle = it.stroke; g2.lineWidth = it.w; g2.stroke(); }
+        g2.restore();
+      } else if (it.t === 'dot') {
+        var d = sp2[0];
+        g2.beginPath(); g2.arc(d.x, d.y, Math.max(1.6, it.r * (d.k / 90)), 0, Math.PI * 2);
+        g2.fillStyle = it.c; g2.fill();
+      } else if (it.t === 'glow') {
+        var gl = sp2[0], rr = Math.max(4, it.r * (gl.k / 90));
+        var grd = g2.createRadialGradient(gl.x, gl.y, 0, gl.x, gl.y, rr);
+        grd.addColorStop(0, it.c); grd.addColorStop(1, 'rgba(0,0,0,0)');
+        g2.globalAlpha = 0.55; g2.fillStyle = grd;
+        g2.beginPath(); g2.arc(gl.x, gl.y, rr, 0, Math.PI * 2); g2.fill();
+        g2.globalAlpha = 1;
+      } else if (it.t === 'sphere') {
+        var sc = sp2[0], sr = Math.max(3, it.r * (sc.k / 90));
+        var sg2 = g2.createRadialGradient(sc.x - sr * 0.35, sc.y - sr * 0.35, sr * 0.1, sc.x, sc.y, sr);
+        sg2.addColorStop(0, it.col);
+        sg2.addColorStop(1, 'rgba(10,20,30,.85)');
+        g2.globalAlpha = it.a; g2.fillStyle = sg2;
+        g2.beginPath(); g2.arc(sc.x, sc.y, sr, 0, Math.PI * 2); g2.fill();
+        g2.globalAlpha = 1;
+      } else if (it.t === 'arrow') {
+        var a = sp2[0], b = sp2[1];
+        var ang = Math.atan2(b.y - a.y, b.x - a.x), hd = 7 * (b.k / 90);
+        g2.save();
+        g2.strokeStyle = it.c; g2.lineWidth = it.w;
+        g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
+        g2.beginPath();
+        g2.moveTo(b.x, b.y);
+        g2.lineTo(b.x - hd * Math.cos(ang - 0.42), b.y - hd * Math.sin(ang - 0.42));
+        g2.lineTo(b.x - hd * Math.cos(ang + 0.42), b.y - hd * Math.sin(ang + 0.42));
+        g2.closePath(); g2.fillStyle = it.c; g2.fill();
+        g2.restore();
+      } else if (it.t === 'lbl') {
+        var lp = sp2[0];
+        g2.save();
+        g2.fillStyle = it.c;
+        g2.font = it.size + 'px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+        g2.textAlign = 'center'; g2.textBaseline = 'middle';
+        g2.fillText(it.s, lp.x + it.dx, lp.y + it.dy);
+        g2.restore();
+      }
+    }
+
+    /* 角标（倾角弧）单独画 */
+    for (i = 0; i < items.length; i++) {
+      it = items[i];
+      if (it.t !== 'ang') continue;
+      var c0 = proj(it.c, w, h), rr2 = it.r * (c0.k / 90);
+      g2.save();
+      g2.strokeStyle = it.col; g2.lineWidth = 1.6;
+      g2.beginPath(); g2.arc(c0.x, c0.y, rr2, it.a0, it.a1); g2.stroke();
+      g2.fillStyle = it.col; g2.font = '11px sans-serif';
+      g2.fillText(it.txt, c0.x + rr2 * 0.45, c0.y + rr2 * 1.35);
+      g2.restore();
+    }
+
+    /* 说明文字固定贴底（不随 3D 旋转） */
+    var caps = [], caps2 = [];
+    for (i = 0; i < items.length; i++) {
+      if (items[i].t === 'cap') caps.push(items[i]);
+      else if (items[i].t === 'cap2') caps2.push(items[i]);
+    }
+    g2.save();
+    g2.textAlign = 'left'; g2.textBaseline = 'alphabetic';
+    if (caps.length) {
+      g2.lineWidth = 3; g2.strokeStyle = 'rgba(6,14,22,.85)';
+      g2.strokeText(caps[0].s, 10, h - (caps2.length ? 27 : 13));
+      g2.fillStyle = caps[0].c || A3;
+      g2.font = '12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+      g2.fillText(caps[0].s, 10, h - (caps2.length ? 27 : 13));
+    }
+    if (caps2.length) {
+      g2.lineWidth = 3; g2.strokeStyle = 'rgba(6,14,22,.85)';
+      g2.strokeText(caps2[0].s, 10, h - 12);
+      g2.fillStyle = 'rgba(169,196,220,.9)';
+      g2.font = '11px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+      g2.fillText(caps2[0].s, 10, h - 12);
+    }
+    g2.restore();
+  }
+
+  function frame(ts) {
+    raf = W.requestAnimationFrame(frame);
+    if (!cv || !scene) return;
+    var dim = resize();
+    if (!dim) return;
+    var dt = last ? Math.min(0.05, (ts - last) / 1000) : 0.016;
+    last = ts;
+    var t = ts / 1000;
+    if (spin && !drag && ts > hold) cam.yaw += dt * 0.22;
+
+    g2.clearRect(0, 0, dim.w, dim.h);
+    /* 背景微渐变，避免纯透明在浅色背景下看不清 */
+    var bg = g2.createLinearGradient(0, 0, 0, dim.h);
+    bg.addColorStop(0, 'rgba(20,40,60,.55)');
+    bg.addColorStop(1, 'rgba(8,18,28,.75)');
+    g2.fillStyle = bg;
+    g2.fillRect(0, 0, dim.w, dim.h);
+
+    var items = [];
+    try { items = scene.build(t, idxNow, totalNow) || []; } catch (e) { items = []; }
+    drawItems(items, dim.w, dim.h);
+  }
+
+  var idxNow = 0, totalNow = 1;
+
+  /* ---------------- DOM ---------------- */
+  var CSS = [
+    '.v3-wrap{position:relative;width:100%;height:100%;min-height:0;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;}',
+    '.v3-bar{position:absolute;left:0;right:0;top:0;z-index:3;display:flex;align-items:center;gap:6px;padding:4px 8px;',
+    'background:linear-gradient(180deg,rgba(8,20,32,.82),rgba(8,20,32,0));font-size:10.5px;color:#9fc0da;}',
+    '.v3-bar .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cfe6f8;font-weight:600;}',
+    '.v3-bar b{font-weight:400;padding:2px 7px;border-radius:9px;border:1px solid rgba(127,211,255,.28);',
+    'color:#bcd8ee;cursor:pointer;background:rgba(10,26,40,.55);white-space:nowrap;}',
+    '.v3-bar b[data-on="1"]{background:rgba(94,224,160,.22);border-color:rgba(94,224,160,.6);color:#d8ffee;}',
+    '.v3-cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;}',
+    '.v3-sub{position:absolute;left:8px;top:26px;z-index:2;font-size:10px;color:rgba(169,196,220,.72);',
+    'max-width:calc(100% - 16px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;}'
+  ].join('');
+
+  function ensureCss() {
+    if (D.getElementById('ctbV3Css')) return;
+    var s = D.createElement('style');
+    s.id = 'ctbV3Css'; s.textContent = CSS;
+    (D.head || D.documentElement).appendChild(s);
+  }
+
+  function unmount() {
+    if (raf) { try { W.cancelAnimationFrame(raf); } catch (e) { } raf = 0; }
+    if (ro) { try { ro.disconnect(); } catch (e) { } ro = null; }
+    cv = null; g2 = null; scene = null; drag = null; pinch = null; last = 0;
+  }
+
+  function mount(h, ctx, sg, idx, total) {
+    unmount();
+    host = h;
+    if (!host) return false;
+    if (mode === '2d') return false;      /* 平面图模式：保留原 SVG，不接管 */
+    ensureCss();
+    idxNow = idx || 0; totalNow = total || 1;
+    scene = pickScene(ctx, sg, idxNow, totalNow);
+    cam = camNew();
+    if (scene && scene.cam) {
+      if (scene.cam.pitch != null) cam.pitch = scene.cam.pitch;
+      if (scene.cam.yaw != null) cam.yaw = scene.cam.yaw;
+      if (scene.cam.dist != null) cam.dist = scene.cam.dist;
+      if (scene.cam.zoom != null) cam.zoom = scene.cam.zoom;
+      if (scene.cam.ty != null) cam.ty = scene.cam.ty;
+    }
+    spin = true;
+
+    host.innerHTML = '';
+    var wrap = D.createElement('div');
+    wrap.className = 'v3-wrap';
+    wrap.innerHTML = '<div class="v3-bar"><span class="nm"></span>'
+      + '<b data-a="spin" data-on="1">⟲ 自转</b>'
+      + '<b data-a="reset">↺ 视角</b>'
+      + '<b data-a="mode">平面图</b></div>'
+      + '<div class="v3-sub"></div>'
+      + '<canvas class="v3-cv"></canvas>';
+    host.appendChild(wrap);
+    var nm = wrap.querySelector('.nm');
+    if (nm) nm.textContent = '3D 演示 · ' + (scene.name || '');
+    var sb = wrap.querySelector('.v3-sub');
+    if (sb) sb.textContent = scene.sub || '';
+
+    cv = wrap.querySelector('canvas');
+    try { g2 = cv.getContext('2d'); } catch (e) { return false; }
+    if (!g2) return false;
+
+    /* 工具条 */
+    wrap.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.getAttribute) return;
+      var a = t.getAttribute('data-a');
+      if (!a) return;
+      e.stopPropagation();
+      if (a === 'spin') {
+        spin = !spin;
+        t.setAttribute('data-on', spin ? '1' : '0');
+      } else if (a === 'reset') {
+        cam = camNew();
+      } else if (a === 'mode') {
+        switchMode('2d');
+      }
+    }, false);
+
+    /* 手指旋转 / 双指缩放 / 滚轮 */
+    cv.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'touch' && e.isPrimary === false) return;
+      drag = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch };
+      try { cv.setPointerCapture(e.pointerId); } catch (e2) { }
+    }, false);
+    cv.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      cam.yaw = drag.yaw + dx * 0.008;
+      cam.pitch = clamp(drag.pitch + dy * 0.006, -0.15, 1.45);
+      hold = (W.performance ? W.performance.now() : Date.now()) + 2600;
+    }, false);
+    function endDrag() { drag = null; hold = (W.performance ? W.performance.now() : Date.now()) + 1600; }
+    cv.addEventListener('pointerup', endDrag, false);
+    cv.addEventListener('pointercancel', endDrag, false);
+    cv.addEventListener('pointerleave', function () { if (drag) endDrag(); }, false);
+    cv.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      cam.zoom = clamp(cam.zoom * (e.deltaY > 0 ? 0.92 : 1.08), 0.55, 2.6);
+    }, { passive: false });
+    /* 双指缩放 */
+    cv.addEventListener('touchstart', function (e) {
+      if (e.touches && e.touches.length === 2) {
+        var a = e.touches[0], b = e.touches[1];
+        pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: cam.zoom };
+        drag = null;
+      }
+    }, { passive: true });
+    cv.addEventListener('touchmove', function (e) {
+      if (pinch && e.touches && e.touches.length === 2) {
+        var a = e.touches[0], b = e.touches[1];
+        var d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        if (pinch.d > 0) cam.zoom = clamp(pinch.z * (d / pinch.d), 0.55, 2.6);
+      }
+    }, { passive: true });
+    cv.addEventListener('touchend', function (e) {
+      if (!e.touches || e.touches.length < 2) pinch = null;
+    }, { passive: true });
+
+    /* 容器尺寸变化（切迷你窗 / 横竖屏） */
+    try {
+      if (W.ResizeObserver) { ro = new W.ResizeObserver(function () { resize(); }); ro.observe(host); }
+    } catch (e) { }
+
+    raf = W.requestAnimationFrame(frame);
+    return true;
+  }
+
+  function switchMode(to) {
+    try { localStorage.setItem(LS, to); } catch (e) { }
+    mode = to;
+    if (to === '2d') {
+      unmount();
+      var st = W.CTB_UNI;
+      if (st && st.reopenViz) st.reopenViz();
+      else if (host) host.innerHTML = '';
+    }
+  }
+
+  W.__CTB_V3__ = {
+    version: VER,
+    mount: mount,
+    unmount: unmount,
+    mode: function () { return mode; },
+    setMode: function (m) { switchMode(m === '2d' ? '2d' : '3d'); },
+    sceneName: function () { return scene ? scene.name : ''; }
+  };
+})();
+
+</script>
 </html>
