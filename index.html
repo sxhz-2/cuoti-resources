@@ -154777,7 +154777,7 @@ boot();
   'use strict';
   var W = window, D = document;
   if (W.__CTB_UNI_BOOT__) return; W.__CTB_UNI_BOOT__ = true;
-  var BUILD = '10.244-uni-p2';
+  var BUILD = '10.245-uni-p2';
 
   function S(v) { return v == null ? '' : String(v); }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -155752,7 +155752,7 @@ boot();
   'use strict';
   var W = window;
   if (W.__CTB_ROLES__) return; W.__CTB_ROLES__ = 1;
-  var VER = '10.244-roles-v1';
+  var VER = '10.245-roles-v1';
   function S(v) { return v == null ? '' : String(v); }
 
   /* 能力池：同一个模型只在它最强的维度上场，避免「拿视觉模型做长文推理」这种错配。
@@ -155980,6 +155980,337 @@ boot();
   };
   try { console.log('[CTB_ROLES] ' + VER + ' 角色分工已装载：vision / solve / grade / quick / oral / probe'); } catch (e) {}
 })();
+</script>
+
+<script id="ctbGk11">
+/* ==== 10.245 · 错题九项 → 十一项：新增第 11 项「高考要点」 ====
+   不改 nineTextSegs 一行源码，只用两处包装：
+   ① __CTB_FIND_KP__ + 进入 nineTextSegs 前：把 KB650 1015 点里的
+      concept / formula / steps / error / model / tips / quick / source +
+      exam_weight / references / difficulty / preKnowledge / nextKnowledge
+      补到考点记录的空位上（只填空缺，不覆盖教材库已有内容）
+      → 第 2/3/4/6/7/8 项由套话变成实数；第 2 项补出「高考占分 / 常见位置 / 备考权重 / 教材出处」
+   ② __CTB_NINE_TEXT_SEGS__：wrong 模式尾部追加第 11 项，并删掉纯口号句（【记】…）
+   注意：正文会经 stripSrc()（讲稿去出处净化），所以占分/位置按「分（」「题（」写法才不会被抹掉。
+   关掉：CTB_GK11.off() */
+(function () {
+  var W = window;
+  var VER = '10.245-gk11';
+  if (W.CTB_GK11 && W.CTB_GK11.__on) return;
+
+  function S(v) { return v == null ? '' : String(v); }
+  function T(s) {
+    return S(s).replace(/\r/g, '').replace(/[ \t\u3000]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+  }
+  function has(v) {
+    if (v == null) return false;
+    if (v instanceof Array) return v.length > 0;
+    return T(v).length > 0;
+  }
+
+  /* ---------- 科目：中文/英文 → KB650 代码 ---------- */
+  var SUBJ = {
+    '语文': 'chinese', '数学': 'math', '英语': 'english',
+    '物理': 'physics', '化学': 'chem', '生物': 'bio',
+    'chinese': 'chinese', 'math': 'math', 'english': 'english',
+    'physics': 'physics', 'chem': 'chem', 'chemistry': 'chem', 'bio': 'bio', 'biology': 'bio'
+  };
+  function subjCode(v) {
+    var k = T(v);
+    if (SUBJ[k]) return SUBJ[k];
+    k = k.replace(/[（(].*$/, '');
+    return SUBJ[k] || '';
+  }
+
+  function points() { return W.__KB650_POINTS__ || []; }
+
+  var _idMap = null;
+  function idTitle(id) {
+    if (!_idMap) {
+      _idMap = {};
+      var a = points(), i;
+      for (i = 0; i < a.length; i++) if (a[i] && a[i].id) _idMap[a[i].id] = S(a[i].title);
+    }
+    return _idMap[id] || '';
+  }
+  function arrTitles(ids) {
+    if (!ids) return [];
+    if (!(ids instanceof Array)) ids = [ids];
+    var out = [], i, t;
+    for (i = 0; i < ids.length && out.length < 4; i++) {
+      t = idTitle(S(ids[i]));
+      if (t && out.indexOf(t) < 0) out.push(t);
+    }
+    return out;
+  }
+
+  /* 考点匹配：全等 > 别名包含；同科优先 */
+  function matchPoint(subj, name) {
+    var nm = T(name).replace(/[（(][^）)]*[）)]\s*$/, '');
+    if (nm.length < 2) return null;
+    var code = subjCode(subj), a = points(), best = null, bestSc = 0, i, p, t, sc, tie = false;
+    for (i = 0; i < a.length; i++) {
+      p = a[i];
+      if (!p) continue;
+      if (code && p.subject && p.subject !== code) continue;
+      t = T(p.title);
+      if (!t) continue;
+      sc = 0;
+      if (t === nm) sc = 4;
+      else if (nm.length >= 3 && t.indexOf(nm) >= 0) sc = 3;
+      else if (t.length >= 4 && nm.indexOf(t) >= 0) sc = 2;
+      if (sc > bestSc) { bestSc = sc; best = p; tie = false; }
+      else if (sc && sc === bestSc) { tie = true; }
+    }
+    if (!best || bestSc < 2) return null;
+    best.__sc = bestSc; best.__tie = tie;
+    return best;
+  }
+
+  /* 只填空缺，不覆盖；教材知识点库已有的概念/公式/步骤一律优先 */
+  var FILL_FIELDS = ['concept', 'formula', 'steps', 'error', 'errAnaly', 'model', 'modelList',
+    'tips', 'tactics', 'quick', 'source'];
+  function fillKp(kp, subj, name) {
+    if (!kp || typeof kp !== 'object') return kp;
+    if (kp.__gk11) return kp;
+    try {
+      var p = matchPoint(subj, name || kp.name || kp.title || '');
+      if (p) {
+        var i, k;
+        for (i = 0; i < FILL_FIELDS.length; i++) {
+          k = FILL_FIELDS[i];
+          if (!has(kp[k]) && has(p[k])) kp[k] = p[k];
+        }
+        if (!has(kp.exam_weight) && p.exam_weight) kp.exam_weight = p.exam_weight;
+        if (!has(kp.references) && p.references) {
+          /* 只留教材条目：references 里常混「近5年新高考I卷 第21题」这类卷别串，
+             讲稿净化会把卷别抹掉、留下「近5年新」这种半截话，索性不挂 */
+          var rf = (p.references instanceof Array ? p.references : [p.references]).filter(function (x) {
+            var t = T(x);
+            return t && !/高考|卷|真题/.test(t);
+          });
+          if (rf.length) kp.references = rf;
+        }
+        if (!has(kp.difficulty) && p.difficulty) kp.difficulty = p.difficulty;
+        if (!has(kp.exam_point) && p.exam_point) kp.exam_point = p.exam_point;
+        if (!has(kp.chapter) && p.chapter) kp.chapter = p.chapter;
+        var g = {
+          title: S(p.title), sc: p.__sc, tie: !!p.__tie,
+          source: S(p.source), chapter: S(p.chapter), examPoint: S(p.exam_point),
+          pre: arrTitles(p.preKnowledge), next: arrTitles(p.nextKnowledge)
+        };
+        try { Object.defineProperty(kp, 'gk11', { value: g, enumerable: false, configurable: true }); }
+        catch (e2) { kp.gk11 = g; }
+        kp.__gk11 = 1;
+      } else {
+        kp.__gk11 = 1;
+      }
+    } catch (e) { }
+    return kp;
+  }
+
+  function hookFindKp() {
+    var o = W.__CTB_FIND_KP__;
+    if (typeof o !== 'function' || o.__gk11) return;
+    var f = function (subj, name) {
+      var r = o.apply(W, arguments);
+      try { if (r && r.kp) fillKp(r.kp, subj, name); } catch (e) { }
+      return r;
+    };
+    f.__gk11 = 1; f.__orig = o;
+    W.__CTB_FIND_KP__ = f;
+  }
+
+  /* ---------- 难度 / 时间 ---------- */
+  var DIFF = {
+    1: '入门，直接套定义', 2: '基础，一步到位', 3: '中档，两步以上',
+    4: '中上，多步推理、常作压轴前一问', 5: '压轴，最后一问常出'
+  };
+  var PAPER = {
+    math: { p: '150分/120分钟', r: 1.25 },
+    chinese: { p: '150分/150分钟', r: 1 },
+    english: { p: '150分/150分钟', r: 1 },
+    physics: { p: '100分/75分钟', r: 1.33 },
+    chem: { p: '100分/75分钟', r: 1.33 },
+    bio: { p: '100分/75分钟', r: 1.33 }
+  };
+  function mins(scoreTxt, code) {
+    var a = S(scoreTxt).match(/\d+(?:\.\d+)?/g);
+    if (!a || !a.length) return '';
+    var r = (PAPER[code] || PAPER.math).r;
+    var lo = Math.round(Number(a[0]) / r), hi = Math.round(Number(a[a.length - 1]) / r);
+    if (hi < lo) { var t = lo; lo = hi; hi = t; }
+    if (lo < 1) lo = 1;
+    return lo === hi ? String(lo) : lo + '–' + hi;
+  }
+
+  /* 真题走向原文里带卷别，讲稿净化会抹掉，这里先整理成能站住的句子 */
+  function trendLine(src) {
+    var s = T(src);
+    if (!s) return '';
+    s = s.replace(/^[^：:]{0,24}[：:]/, '');                 /* 去掉「新高考 I 卷近 5 年：」这类前缀 */
+    s = s.replace(/(?:新)?高考\s*[ⅠⅡⅢIV]+\s*卷/g, '本卷').replace(/全国\s*[甲乙丙]\s*卷/g, '本卷');
+    s = s.replace(/^[，。；、\s]+/, '');
+    return s ? '【真题走向】' + s : '';
+  }
+
+  /* ---------- 第 11 项正文：只写有据可查的 ---------- */
+  function seg11(ctx, kp) {
+    ctx = ctx || {}; kp = kp || {};
+    var g = kp.gk11 || null;
+    var code = subjCode(ctx.subject) || '';
+    var ew = kp.exam_weight || {};
+    var L = [];
+
+    if (ew.score) L.push('【卷面占分】' + T(ew.score) + (ew.types ? '（' + T(ew.types) + '）' : ''));
+    if (ew.pos) L.push('【近年落点】' + T(ew.pos) + (ew.level ? '（' + T(ew.level) + '）' : ''));
+
+    if (kp.difficulty) {
+      var d = Number(kp.difficulty);
+      if (d) L.push('【难度】' + d + ' / 5 · ' + (DIFF[d] || ''));
+    }
+    if (g && (g.examPoint || g.chapter)) {
+      L.push((g.examPoint ? '【考纲条目】' + g.examPoint : '')
+        + (g.chapter ? '　【章节】' + g.chapter : ''));
+    }
+
+    var mm = mins(ew.score, code);
+    if (mm) {
+      var pp = PAPER[code] || PAPER.math;
+      L.push('【时间预算】约 ' + mm + ' 分钟（按 ' + pp.p + ' ≈ ' + pp.r + '分/分钟折算）；'
+        + '到点没算完先写结论和判据，步骤分比结果分稳。');
+    }
+
+    var tr = trendLine(g && g.source);
+    if (tr) L.push(tr);
+
+    if (g && g.pre.length) L.push('【先修考点】' + g.pre.join('、'));
+    if (g && g.next.length) L.push('【后续考点】' + g.next.join('、'));
+
+    if (!L.length) {
+      var nm = T(ctx.kp) || '本点';
+      return '【未对齐考纲库】「' + nm + '」在 1015 点里没有同名或别名条目，本题记录也没带卷别年份，'
+        + '所以这一项既不给占分也不给位置——不编。把错题记录的知识点名改成考纲里的正式名称，重开这一页就是实数。';
+    }
+    if (g && g.sc < 4) {
+      L.push('【对齐考纲】' + g.title + '（与本题知识点名不是全等，按包含匹配'
+        + (g.tie ? '，同类条目不止一条，数字以这条为准' : '') + '）');
+    }
+    return L.join('\n');
+  }
+
+  /* ---------- 去口号：删纯方法口号与无数据时的通用句 ----------
+     判定标准：这句话换任何一道题、任何一个考点都成立 → 套话，删。
+     只留「本题 / 本考点」才成立的内容。 */
+  var DROP_HDR = [
+    /^\s*【术语口径】/,
+    /^\s*【对着这道题问自己三句】/,
+    /^\s*【每条公式过三件事】/,
+    /^\s*【怎么挑】/,
+    /^\s*【写在哪】/,
+    /^\s*【逐个对】/,
+    /^\s*【判断方法】/,
+    /^\s*【只认一条】/,
+    /^\s*【怎么认】/,
+    /^\s*【记住它】/,
+    /^\s*【迁移法】/,
+    /^\s*【判定标准】/,
+    /^\s*【用前必看】/,
+    /^\s*【动作清单】/,
+    /^\s*【万变不离其宗】/,
+    /^\s*【过关标准】/,
+    /^\s*【归到哪一类】/,
+    /^\s*【下一步只做一件事】/,
+    /^\s*【记】/,
+    /^\s*【在高考里怎么出现】/
+  ];
+  function deBoiler(b) {
+    var L = S(b).split('\n'), out = [], i, j, hit, skip = false, defLine = '';
+    for (i = 0; i < L.length; i++) {
+      var ln = L[i];
+      if (/^\s*【课本定义】/.test(ln)) defLine = T(ln.replace(/^\s*【课本定义】/, ''));
+      hit = false;
+      for (j = 0; j < DROP_HDR.length; j++) if (DROP_HDR[j].test(ln)) { hit = true; break; }
+      if (hit) { skip = true; continue; }
+      /* 被删标题下面的 ①②③ / · 子句一并删掉，直到遇到下一个小标题或正文 */
+      if (skip) {
+        if (/^\s*$/.test(ln) || /^\s*[①②③④⑤⑥⑦⑧⑨⑩·•]/.test(ln)) continue;
+        skip = false;
+      }
+      out.push(ln);
+    }
+    /* 【白话一句】与【课本定义】首句重复时只留一条 */
+    var res = [], i2;
+    for (i2 = 0; i2 < out.length; i2++) {
+      var s = out[i2];
+      if (/^\s*【白话一句】/.test(s) && defLine) {
+        var w = T(s.replace(/^\s*【白话一句】/, ''));
+        if (w.length >= 8 && defLine.indexOf(w.slice(0, 12)) >= 0) continue;
+      }
+      res.push(s);
+    }
+    return T(res.join('\n'));
+  }
+
+  /* ---------- 追加第 11 项 ---------- */
+  function wrapNine() {
+    var o = W.__CTB_NINE_TEXT_SEGS__;
+    if (typeof o !== 'function' || o.__gk11w) return;
+    var f = function (ctx, kp, mode) {
+      var m = S(mode || (ctx && ctx.mode));
+      var k = (kp && typeof kp === 'object') ? kp : {};
+      /* 关键：先补 kp，再跑原函数——否则第 2 项的占分/位置/教材出处补不进去 */
+      if (m === 'wrong' || m === 'exam') { try { fillKp(k, ctx && ctx.subject, ctx && ctx.kp); } catch (e0) { } }
+      var r = o.apply(W, arguments);
+      try {
+        if (m !== 'wrong' || !r || !r.length) return r;
+        var i, has11 = false;
+        for (i = 0; i < r.length; i++) {
+          if (!r[i]) continue;
+          if (typeof r[i].b === 'string') r[i].b = deBoiler(r[i].b);
+          if (/高考要点/.test(S(r[i].t))) has11 = true;
+        }
+        if (has11) return r;
+        r.push({ i: '🎯', t: '高考要点（占分·难度·先修后续）', b: seg11(ctx, k) });
+      } catch (e) { }
+      return r;
+    };
+    f.__gk11w = 1; f.__orig = o;
+    W.__CTB_NINE_TEXT_SEGS__ = f;
+  }
+
+  function hookAll() { hookFindKp(); wrapNine(); }
+
+  W.CTB_GK11 = {
+    version: VER, __on: 1,
+    seg11: seg11,
+    match: matchPoint,
+    fill: function (subj, name) { return fillKp({}, subj, name); },
+    probe: function (ctx) { return seg11(ctx, fillKp({}, ctx && ctx.subject, ctx && ctx.kp)); },
+    hook: hookAll,
+    off: function () {
+      try {
+        if (W.__CTB_NINE_TEXT_SEGS__ && W.__CTB_NINE_TEXT_SEGS__.__orig) W.__CTB_NINE_TEXT_SEGS__ = W.__CTB_NINE_TEXT_SEGS__.__orig;
+        if (W.__CTB_FIND_KP__ && W.__CTB_FIND_KP__.__orig) W.__CTB_FIND_KP__ = W.__CTB_FIND_KP__.__orig;
+      } catch (e) { }
+      W.CTB_GK11.__on = 0;
+    },
+    stat: function () {
+      return {
+        nineWrapped: !!(W.__CTB_NINE_TEXT_SEGS__ && W.__CTB_NINE_TEXT_SEGS__.__gk11w),
+        kpWrapped: !!(W.__CTB_FIND_KP__ && W.__CTB_FIND_KP__.__gk11),
+        points: points().length
+      };
+    }
+  };
+
+  hookAll();
+  /* 10.152 / 10.157 那两套 hook 每 260ms 重挂一次，会把我压到内层：低频补挂，抢不到也不影响出内容 */
+  try { W.setInterval(hookAll, 400); } catch (e) { }
+  try { console.log('[CTB_GK11] ' + VER + ' 已装载：错题九项 → 十一项（第 11 项＝高考要点，数据取 KB650）'); } catch (e) { }
+})();
+
 </script>
 
 </html>
