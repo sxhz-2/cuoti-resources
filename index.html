@@ -8141,7 +8141,6 @@ window.addEventListener('load', function(){
 
     bili: { label: 'B站 Index-Translate（✅免Key·国内直连·35B视觉·主力）', url: 'https://index-translate.bilibili.com/v1', txt: 'Index-Translate-35B-A3B', fast: 'Index-Translate-35B-A3B', vis: 'Index-Translate-35B-A3B', solve: 'Index-Translate-35B-A3B', keyslot: 'bili', tip: '完全免 Key、免注册，国内直连。旗舰 35B 原生视觉，识题/解题都走它。图片用标准 base64 data URL。实测约 30 RPM（非官方承诺）。无需填任何 Key', demo: 'free', noAuth: true },
     agnes: { label: 'Agnes AI（多模态·免费·兜底）', url: 'https://apihub.agnes-ai.com/v1', txt: 'agnes-3.0-flash', fast: 'agnes-3.0-flash', vis: 'agnes-3.0-flash', keyslot: 'agnes', tip: 'platform.agnes-ai.com → Settings → API Keys；已内置 Key，打开即用', demo: '' },
-    orouter: { label: 'OpenRouter 免费池（多模态·免费·需 Key·免信用卡）', url: 'https://openrouter.ai/api/v1', txt: 'inclusionai/ling-3.2-flash:free', fast: 'inclusionai/ling-3.2-flash:free', vis: 'nvidia/nemotron-3.5-super-vl:free', solve: 'nvidia/nemotron-3.5-super-vl:free', keyslot: 'orouter', tip: 'openrouter.ai 免费注册拿 Key（无卡也能注册）。:free 模型每日限次（约 50/天）。模型名带 :free 后缀的免费池随时换，改这里即可', demo: '' },
     dots: { label: '小红书 Dots 点点（多模态·512K·可直连·已内置Key）', url: 'https://note3-prev-api.askdiandian.com/v1', txt: 'dots3-note-prev', fast: 'dots3-note-prev', vis: 'dots3-note-prev', keyslot: 'dots', tip: '小红书点点：Key 未内置，需要时在下方粘贴 ak_ 开头的 Key', demo: '' },
     bailian: { label: '阿里云百炼（旗舰场景·原生视觉·100万上下文·需百炼Key·sk-ws-/sk-/sk-sp-开头）', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', txt: 'qwen3.8-max', fast: 'qwen3.8-flash', vis: 'qwen3.8-max', solve: 'qwen3.8-max', keyslot: 'bailian', tip: '百炼控制台 bailian.console.aliyun.com → API-KEY 创建（务必选「华北2北京」地域）；旗舰 qwen3.8-max（2.4T MoE·1M上下文·原生视觉），浏览器可直连。Key 前缀自动配套地址：sk-ws-/sk- 标准 Key 走通用地址、sk-sp- 套餐 Key 自动走 coding 专属地址。Key 与地域绑定、被删/移出空间会立即失效。这里的百炼 Key 只填本栏，不要填到「通义千问」「Kimi」', demo: '' },
     qwen: { label: '通义千问（主力通用模型·可直连·需通义千问Key·sk-ws-/sk-/sk-sp-开头）', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', txt: 'qwen-plus', fast: 'qwen-turbo', vis: 'qwen3-vl-plus', solve: 'qwen3.8-max', keyslot: 'qwen', tip: 'Key 来源：百炼控制台 bailian.console.aliyun.com → 右上角「API-KEY」→ 创建我的 API-KEY（即你截图那个页面），复制后粘到本栏。⚠️务必选「华北2北京」地域，Key 与地域绑定不能跨地域用。本版自动按前缀配套地址：sk-ws-/sk- 走通用地址，sk-sp- 套餐 Key 自动走 coding 专属地址。模型：qwen-plus 均衡、qwen-turbo 快速、qwen3-vl-plus 视觉。本栏与「阿里云百炼」栏各填各的', demo: '' },
@@ -8189,14 +8188,14 @@ window.addEventListener('load', function(){
   
 
    
-  var PRI = ['bili', 'qwen', 'bailian', 'moonshot', 'kimi', 'siliconflow', 'orouter', 'zhipu', 'sensenova', 'tokenhub', 'volc', 'dots', 'agnes', 'kilo', 'kiloauto', 'kilostep', 'kiloling', 'makers_flash', 'makers_pro'];
+  var PRI = ['bili', 'qwen', 'bailian', 'moonshot', 'kimi', 'siliconflow', 'zhipu', 'sensenova', 'tokenhub', 'volc', 'dots', 'agnes', 'kilo', 'kiloauto', 'kilostep', 'kiloling', 'makers_flash', 'makers_pro'];
   
 
 
 
   
 
-  var VIS_PRI = ['bili', 'qwen', 'bailian', 'moonshot', 'kimi', 'siliconflow', 'zhipu', 'orouter', 'tokenhub', 'volc', 'dots', 'agnes', 'kilostep', 'makers_flash'];
+  var VIS_PRI = ['bili', 'qwen', 'bailian', 'moonshot', 'kimi', 'siliconflow', 'zhipu', 'tokenhub', 'volc', 'dots', 'agnes', 'kilostep', 'makers_flash'];
   
 
 
@@ -8955,7 +8954,7 @@ window.addEventListener('load', function(){
   async function rawChat(mdl, messages, opts, url, key, kind, code) {
     var cfg = loadCfg();
     var proxy = relayBase(cfg);
-    /* 10.243 强制直连名单：这些端点自带 CORS（实测 ACAO: *），一旦走中转会被
+    /* 10.244 强制直连名单：这些端点自带 CORS（实测 ACAO: *），一旦走中转会被
        Worker 的 ALLOW_HOSTS 白名单挡成 403 host_not_allowed，且白白多一跳。
        同时按「目标域名」判断，custom / 未保存 Key 等任何分支都绕不过去。 */
     var DIRECT_HOSTS = ['ai-gateway.edgeone.link'];
@@ -9197,7 +9196,6 @@ window.addEventListener('load', function(){
     moonshot: ['kimi-k2.6', 'moonshot-v1-8k-vision-preview', 'moonshot-v1-auto'],
     bili: ['Index-Translate-35B-A3B'],
     agnes: ['agnes-3.0-flash'],
-    orouter: ['nvidia/nemotron-3.5-super-vl:free', 'inclusionai/ling-3.2-flash:free'],
     dots: ['dots3-note-prev'],
     kilostep: ['stepfun/step-5-preview-free']
   };
@@ -10911,7 +10909,6 @@ window.addEventListener('load', function(){
       { slot: 'kimi',       label: 'Kimi（K2.6 旗舰·原生视觉）' },
       { slot: 'zhipu',      label: '智谱 Zhipu（免费视觉）', proxy: true },
       { slot: 'sensenova',  label: '商汤 SenseNova（免费）', proxy: true },
-      { slot: 'orouter',    label: 'OpenRouter 免费池（:free 多模态）' },
       { slot: 'makers',     label: 'EdgeOne Makers（腾讯云·DeepSeek 免费额度）' },
       { slot: 'tokenhub',   label: '腾讯混元 TokenHub', proxy: true }
     ];
@@ -11161,7 +11158,7 @@ window.addEventListener('load', function(){
     var ps = document.getElementById('aiCfgPass'); if (ps) c.pass = ps.value.trim();
      
     if (!c.keys) c.keys = {};
-    ['deepseek', 'bailian', 'qwen', 'siliconflow', 'moonshot', 'kimi', 'sensenova', 'tokenhub', 'orouter', 'makers'].forEach(function (slot) {
+    ['deepseek', 'bailian', 'qwen', 'siliconflow', 'moonshot', 'kimi', 'sensenova', 'tokenhub', 'makers'].forEach(function (slot) {
       var el = document.getElementById('aiCfgKey_' + slot);
       if (!el) return;
       if (slot === q.keyslot) return;          
@@ -152748,7 +152745,7 @@ html body .ctb175vidqah button{background:#eef4fa!important;border:1px solid #b9
   if (W.__CTB212__) return;
   W.__CTB212__ = 1;
 
-  /* 10.243：'cuInput' = 统一外壳（CTB_UNI）的提问框，随 P2 一并纳入拍照/粘贴附图 */
+  /* 10.244：'cuInput' = 统一外壳（CTB_UNI）的提问框，随 P2 一并纳入拍照/粘贴附图 */
   var IDS = ['ctb179In', 'v84Q', 'ctv9Q', 'vqa131In', 'ldAskIn',
              'aiAskI', 'aiQaInput', 'c126CustIn', 'cuInput'];
   var MAX_IMG = 3;
@@ -154768,7 +154765,7 @@ boot();
 })();
 </script>
 
-<!-- ================= 10.243 · 统一播放器外壳 P0（灰度 · 默认关闭） =================
+<!-- ================= 10.244 · 统一播放器外壳 P0（灰度 · 默认关闭） =================
      目标：全文件所有播放/讲解入口 → 一个 #ctbUniMask 界面。
      开关：?uni=1  或  localStorage['ctb_uni']='1'  或  控制台 CTB_UNI.enable()
      关闭：?uni=0  或  CTB_UNI.disable()（老播放器行为原样保留，一字节不改）
@@ -154780,7 +154777,7 @@ boot();
   'use strict';
   var W = window, D = document;
   if (W.__CTB_UNI_BOOT__) return; W.__CTB_UNI_BOOT__ = true;
-  var BUILD = '10.243-uni-p2';
+  var BUILD = '10.244-uni-p2';
 
   function S(v) { return v == null ? '' : String(v); }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -155554,6 +155551,137 @@ boot();
   var hk = setInterval(function () { hookAll(); }, 400);
   setTimeout(function () { clearInterval(hk); }, 20000);
 
+  /* ================= 8b) 点击捕获：拦真实点击，不认函数名 =================
+     为什么要有这一层：hookAll 改的是 W.xxx，后加载模块重新赋值就把它盖掉了
+     （实测 9 个钩子里只有 C121.openStage 还活着）。捕获阶段拦点击不依赖任何全局名，
+     谁后加载都盖不掉；取不到上下文就原样放行，绝不会出现「点了没反应」。
+     关闭灰度时本层完全不介入（第一行就 return）。 */
+  var ENT_ID = { kbPlay: 1, kbVid: 1, c108TabL: 1, c108Play: 1, aivVidBtn: 1, c120Nine: 1, c110Badge: 1, c110AiBtn: 1, c110Tab: 1 };
+  var ENT_RE = /(视频讲解|视频解析|原版视频|查看讲解|真人视频|九项视频|板书逐步|交互讲题|AI\s*深讲)/;
+  var ENT_STAT = { hit: 0, miss: 0, last: '', list: [], skip: '' };
+
+  function entTxt(el) {
+    var t = '';
+    try { t = S(el.innerText || el.textContent || ''); } catch (e) { return ''; }
+    return t.replace(/\s+/g, ' ').trim();
+  }
+  function entInShell(n) {
+    try { return !!(n && n.closest && n.closest('#ctbUniMask')); } catch (e) { return false; }
+  }
+  function entFind(node) {
+    var n = node, d = 0;
+    while (n && n.nodeType === 1 && d < 7) {
+      if (entInShell(n)) return null;
+      if (n.id && ENT_ID[n.id]) return { el: n, why: 'id=' + n.id };
+      var a = n.getAttribute ? n.getAttribute('data-act') : '';
+      if (a === 'realvideo' || a === 'kbvideo') return { el: n, why: 'act=' + a };
+      var tg = (n.tagName || '').toUpperCase();
+      if (tg !== 'INPUT' && tg !== 'TEXTAREA' && tg !== 'SELECT' && tg !== 'HTML' && tg !== 'BODY') {
+        var t = entTxt(n);
+        if (t && t.length <= 22 && ENT_RE.test(t)) return { el: n, why: 'txt=' + t };
+      }
+      n = n.parentNode; d++;
+    }
+    return null;
+  }
+  function entGuessSubj(txt) {
+    var m = S(txt).match(/(物理|数学|化学|生物|语文|英语|历史|地理|政治)/);
+    return m ? m[1] : '';
+  }
+  function entCtx(hit) {
+    var i, ws = (W.wrongs || []), el = hit.el;
+    /* ① 祖先 data-id / data-wid → 错题本里精确命中 */
+    var n = el, id = '';
+    for (i = 0; n && n.nodeType === 1 && i < 9; i++, n = n.parentNode) {
+      if (!n.getAttribute) continue;
+      var v = n.getAttribute('data-id') || n.getAttribute('data-wid') || n.getAttribute('data-wrongid');
+      if (v) { id = v; break; }
+    }
+    if (id) {
+      for (i = 0; i < ws.length; i++) if (S(ws[i].id) === S(id)) return ws[i];
+    }
+    /* ② 就近取一块足够长的正文，前 16 字去错题本里比对题干 */
+    var host = el, txt = '';
+    for (i = 0; host && host.nodeType === 1 && i < 6; i++, host = host.parentNode) {
+      var htag = (host.tagName || '').toUpperCase();
+      if (htag === 'BODY' || htag === 'HTML' || host.id === 'ctbUniMask') { host = null; break; }
+      var t = entTxt(host);
+      if (t.length >= 40 && t.length <= 3000) { txt = t; break; }
+    }
+    var flat = S(txt).replace(/\s+/g, '');
+    if (flat.length >= 12) {
+      var head = flat.slice(0, 16);
+      for (i = ws.length - 1; i >= 0; i--) {
+        var q = S(ws[i].question || '').replace(/\s+/g, '');
+        if (!q) continue;
+        if (q.indexOf(head) >= 0) return ws[i];
+        if (q.length >= 12 && head.indexOf(q.slice(0, 16)) >= 0) return ws[i];
+      }
+    }
+    /* ③ 老舞台：C121 已有当前题，优先用它，再退回最后一条错题 */
+    try {
+      if (W.C121 && typeof W.C121.stageInfo === 'function') {
+        var si = W.C121.stageInfo();
+        if (si && si.segs && si.segs.length) {
+          var sbody = S(si.segs[0].body), hd = sbody.replace(/\s+/g, '').slice(0, 16);
+          if (hd.length >= 10) {
+            for (i = ws.length - 1; i >= 0; i--) {
+              var q3 = S(ws[i].question || '').replace(/\s+/g, '');
+              if (!q3) continue;
+              if (q3.indexOf(hd) >= 0 || (q3.length >= 12 && hd.indexOf(q3.slice(0, 16)) >= 0)) return ws[i];
+            }
+          }
+          if (ws.length) return ws[ws.length - 1];
+          return { question: sbody, subject: entGuessSubj(sbody) || '数学' };
+        }
+      }
+    } catch (e) {}
+    /* ④ 知识卡：STATE 带科目/章节 */
+    try {
+      var st = W.STATE || W.__KB_STATE__;
+      if (st && (st.subj || st.ch)) {
+        return { subject: S(st.subj), kp: S(st.ch), chapter: S(st.ch), topic: S(st.ch), question: S(txt).slice(0, 1200) };
+      }
+    } catch (e) {}
+    /* ⑤ 抓到的正文本身就是题面（知识卡/资料卡的常见情形） */
+    if (flat.length >= 40) return { question: S(txt).slice(0, 1500), subject: entGuessSubj(txt), kp: '' };
+    /* ⑥ 最后一条错题 */
+    return ws.length ? ws[ws.length - 1] : null;
+  }
+  function entCloseOld() {
+    ['CTB_108', 'C120', 'C121', 'CTV9'].forEach(function (k) {
+      try { var o = W[k]; if (o && typeof o.close === 'function') o.close(); } catch (e) {}
+    });
+  }
+  function entOnClick(e) {
+    ENT_STAT.calls = (ENT_STAT.calls || 0) + 1;
+    if (e.__cuEnt || e.__cuSeen) return;
+    e.__cuSeen = 1;
+    if (!uniOn()) { ENT_STAT.skip = 'off'; return; }
+    if (ST.open) { ENT_STAT.skip = 'open'; return; }                       /* 新壳已开，放行，避免自锁 */
+    var hit = null;
+    try { hit = entFind(e.target); } catch (err) { hit = null; }
+    if (!hit) { ENT_STAT.miss++; ENT_STAT.skip = 'noHit'; return; }
+    var c = null;
+    try { c = entCtx(hit); } catch (err) { c = null; }
+    if (!c) { ENT_STAT.miss++; ENT_STAT.skip = 'noCtx'; return; }        /* 取不到 → 原样放行 */
+    e.__cuEnt = 1;
+    try { e.preventDefault(); } catch (err) {}
+    try { e.stopPropagation(); } catch (err) {}
+    try { e.stopImmediatePropagation(); } catch (err) {}
+    ENT_STAT.hit++; ENT_STAT.last = hit.why;
+    if (ENT_STAT.list.length < 40) ENT_STAT.list.push(hit.why);
+    try { entCloseOld(); } catch (err) {}
+    try { open(c, { from: 'ent' }); }
+    catch (err) { toast('统一外壳打开失败：' + ((err && err.message) || err)); }
+  }
+  try {
+    /* window 与 document 双挂：C110 等模块会在 document 捕获阶段 stopImmediatePropagation，
+       只挂 document 会被它吞掉（实测 c110AiBtn 就是这种情况）。window 捕获更早，能穿过去。 */
+    W.addEventListener('click', entOnClick, true);
+    D.addEventListener('click', entOnClick, true);
+    W.__CTB_UNI_ENT__ = { stat: function () { return { hit: ENT_STAT.hit, miss: ENT_STAT.miss, calls: ENT_STAT.calls || 0, last: ENT_STAT.last, skip: ENT_STAT.skip, list: ENT_STAT.list.slice() }; }, find: entFind, ctx: entCtx };
+  } catch (e) {}
   /* ================= 9) 对外接口 ================= */
   W.CTB_UNI = {
     build: BUILD,
@@ -155614,7 +155742,7 @@ boot();
 </script>
 
 <script id="ctbAiRoles">
-/* ==== 10.243 · AI 角色分工（准/快双轨 + 互检） ====
+/* ==== 10.244 · AI 角色分工（准/快双轨 + 互检） ====
    目的：不同任务用不同模型，而不是所有任务挤同一条接力链。
    准（goal=acc）：先上能力最强的，失败才降级 —— 解题、识图、口播。
    快（goal=fast）：先上最快的，失败才升级 —— 判分、随口问答、探活。
@@ -155624,7 +155752,7 @@ boot();
   'use strict';
   var W = window;
   if (W.__CTB_ROLES__) return; W.__CTB_ROLES__ = 1;
-  var VER = '10.243-roles-v1';
+  var VER = '10.244-roles-v1';
   function S(v) { return v == null ? '' : String(v); }
 
   /* 能力池：同一个模型只在它最强的维度上场，避免「拿视觉模型做长文推理」这种错配。

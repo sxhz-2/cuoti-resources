@@ -15,7 +15,7 @@
 
 ```
 index.html         错题本网页版（单文件，含全部逻辑与数据，约 26 MB）
-couti10190.apk     安卓安装包（当前 10.243 版，12.9 MB）
+couti10190.apk     安卓安装包（当前 10.244 版，12.3 MB）
 apk/index.html     安装包下载页（手机访问自动跳转）
 manifest.json      资料清单（schema: cuoti-res/1）
 .nojekyll          关闭 Jekyll 处理，纯静态站必须有
